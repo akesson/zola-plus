@@ -21,7 +21,7 @@ sources:
 tasks:
   - build: |
       cd my-website
-      zola build
+      zola-plus build
   - package: |
       cd my-website
       tar -C public -cvz . > ../site.tar.gz

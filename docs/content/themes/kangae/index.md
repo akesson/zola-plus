@@ -54,7 +54,7 @@ If you want to mention your website in this section, please raise a pull request
 Before using this theme, [install zola][6]. After you've installed zola,
 
 ```
-$ zola init microblog
+$ zola-plus init microblog
 > What is the URL of your site? (https://example.com):
 > Do you want to enable Sass compilation? [Y/n]:
 > Do you want to enable syntax highlighting? [y/N]:

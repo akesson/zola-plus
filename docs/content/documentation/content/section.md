@@ -51,7 +51,7 @@ title = ""
 
 description = ""
 
-# A draft section is only loaded if the `--drafts` flag is passed to `zola build`, `zola serve` or `zola check`.
+# A draft section is only loaded if the `--drafts` flag is passed to `zola-plus build`, `zola-plus serve` or `zola-plus check`.
 draft = false
 
 # Used to sort pages by "date", "update_date", "title", "title_bytes", "weight", "slug" or "none". See below for more information.

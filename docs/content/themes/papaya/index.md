@@ -94,7 +94,7 @@ A clean [Zola](https://getzola.org) theme for blogging and projects, forked from
       └── categories.json
    ```
  
-5. _(optional)_ To enable GitHub repository stars/fork counts (disabled by default to avoid hitting API rate limits), set the `$ZOLA_ENV` environment variable to `prod` prior to your `zola serve`/`zola build` execution.
+5. _(optional)_ To enable GitHub repository stars/fork counts (disabled by default to avoid hitting API rate limits), set the `$ZOLA_ENV` environment variable to `prod` prior to your `zola-plus serve`/`zola-plus build` execution.
    
    For csh/tsch:
    ```shell

@@ -125,7 +125,7 @@ android_chrome_192 = "/icons/android-chrome-192x192.png"
 manifest = "/icons/site.webmanifest"
 ```
 
-You can now run `zola serve` and visit : `http://127.0.0.1:1111/` to see your site
+You can now run `zola-plus serve` and visit : `http://127.0.0.1:1111/` to see your site
 
 ## Syntax Highlighting
 Blow makes use of Zola code highlighting feature.  

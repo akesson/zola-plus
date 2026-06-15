@@ -109,7 +109,7 @@ pub fn create_new_project(name: &str, force: bool) -> Result<()> {
     ));
     println!();
     console::info(
-        "Get started by moving into the directory and using the built-in server: `zola serve`",
+        "Get started by moving into the directory and using the built-in server: `zola-plus serve`",
     );
     println!("Visit https://www.getzola.org for the full documentation.");
     Ok(())

@@ -40,7 +40,7 @@ git clone https://github.com/inhzus/zola-futu
 cd zola-futu
 
 # 3. Serve the site locally
-zola serve
+zola-plus serve
 
 # 4. Open http://127.0.0.1:1111/ in the browser
 ```

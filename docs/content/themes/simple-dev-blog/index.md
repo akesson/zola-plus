@@ -40,7 +40,7 @@ You can find installation instructions [on the Zola website](https://www.getzola
 1. After you've installed the Zola CLI, run the following command to create a new site:
 
    ```sh
-   zola init my_amazing_site
+   zola-plus init my_amazing_site
    cd my_amazing_site
    ```
 
@@ -61,7 +61,7 @@ You can find installation instructions [on the Zola website](https://www.getzola
 6. That's it! Now build your site by running the following command, and navigate to `127.0.0.1:111`:
 
    ```sh
-   zola serve
+   zola-plus serve
    ```
 
 You should now have a speedy simple dev blog up and running, have fun!

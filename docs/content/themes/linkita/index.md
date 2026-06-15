@@ -72,7 +72,7 @@ This gives you a complete blog setup with all the essential configuration ready 
 0. Create a new Zola site if you haven't already:
 
 ```sh
-zola init myblog
+zola-plus init myblog
 cd myblog
 git init
 ```

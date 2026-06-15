@@ -104,7 +104,7 @@ homepage = "https://blog.jiaxiang.wang"
 1. 在仓库列表中选择您的 `Homepage-Creators` 仓库。
 1. 配置构建设置：
   - **Framework preset**: 选择 `None`。
-  - **Build command 构建命令**: 输入 `zola build`。
+  - **Build command 构建命令**: 输入 `zola-plus build`。
   - **Build output directory 构建输出**: 输入 `public`。
   - 添加环境变量`UNSTABLE_PRE_BUILD`，填写`asdf plugin add zola https://github.com/salasrod/asdf-zola && asdf install zola $ZOLA_VERSION && asdf global zola $ZOLA_VERSION`
   - 添加环境变量`ZOLA_VERSION`，填写`0.20.0`
@@ -131,7 +131,7 @@ homepage = "https://blog.jiaxiang.wang"
 1. 运行预览命令，然后在浏览器打开提示的预览地址
 
     ```bash
-    zola serve
+    zola-plus serve
     ```
 
     此时您应该成功访问到博客网站啦
@@ -152,7 +152,7 @@ homepage = "https://blog.jiaxiang.wang"
 正式使用时，假定你已经对 [Zola](https://github.com/getzola/zola) 框架和 Git Submodule 具备基础的了解，具体操作步骤如下：
 
 1. 本地安装 Zola 命令行工具，参考[官方说明](https://www.getzola.org/documentation/getting-started/installation/)
-1. 使用 `zola` 命令行本地初始化一个新的网站，也就是你的个人主页，并初始化为 Git 仓库。命令格式为`zola init <site name>`
+1. 使用 `zola` 命令行本地初始化一个新的网站，也就是你的个人主页，并初始化为 Git 仓库。命令格式为`zola-plus init <site name>`
 1. 将本主题仓库作为 Git Submodule 安装在你的网站
    ```bash
    git submodule add -b main https://github.com/iWangJiaxiang/Homepage-Creators themes
@@ -176,7 +176,7 @@ homepage = "https://blog.jiaxiang.wang"
 
 1. 将使用到的图片素材并存放在`static/img`文件夹（最费时且最难的工作其实是图片制作……）
 2. 修改 `config.toml` 文件，配置板块、文字内容和引用的图片
-3. 运行`zola serve`命令，本地预览主页，支持实时刷新
+3. 运行`zola-plus serve`命令，本地预览主页，支持实时刷新
 
 要进行主页定制，你需要对 Zola 框架具有基本的了解，例如[理解项目结构](https://www.getzola.org/documentation/getting-started/directory-structure/)和[配置文件](https://www.getzola.org/documentation/getting-started/configuration/)，这些内容十分简单，只需要通读一遍即可。
 

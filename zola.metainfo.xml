@@ -47,7 +47,7 @@
   <url type="help">https://www.getzola.org/documentation/</url>
 
   <provides>
-    <binary>zola</binary>
+    <binary>zola-plus</binary>
   </provides>
 
   <content_rating type="oars-1.1" />

@@ -8,7 +8,7 @@ will want to use many [Tera blocks](https://keats.github.io/tera/docs#inheritanc
 allow users to easily modify it.
 
 ## Getting started
-As mentioned, a theme is just like any site; start by running `zola init MY_THEME_NAME`.
+As mentioned, a theme is just like any site; start by running `zola-plus init MY_THEME_NAME`.
 
 The only thing needed to turn that site into a theme is to add a `theme.toml` configuration file with the
 following fields:
@@ -47,7 +47,7 @@ repo = "https://www.github.com/mdo/hyde"
 A simple theme you can use as an example is [Hyde](https://github.com/Keats/hyde).
 
 ## Working on a theme
-As a theme is just a site, you can simply use `zola serve` and make changes to your
+As a theme is just a site, you can simply use `zola-plus serve` and make changes to your
 theme, with live reload working as expected.
 
 Make sure to commit every directory (including `content`) in order for other people

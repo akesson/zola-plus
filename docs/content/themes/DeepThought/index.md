@@ -148,7 +148,7 @@ Just to double-check to make sure you have the right version. It is not supporte
 <!-- Run Locally -->
 ### :running: Run Locally
 
-Go into your sites directory and type `zola serve`. You should see your new site at `localhost:1111`.
+Go into your sites directory and type `zola-plus serve`. You should see your new site at `localhost:1111`.
 
 **NOTE**: you must provide the theme options variables in `config.toml` to serve a functioning site
 

@@ -29,7 +29,7 @@ If you already have a Zola site you must now ensure that `base_url` in `zola.tom
 
     base_url = "https://white-snow-9922.fly.dev"
 
-If you don't have an existing site, initialize one with `zola init -f` and remember to set the correct `base_url`.
+If you don't have an existing site, initialize one with `zola-plus init -f` and remember to set the correct `base_url`.
 
 You're now ready to launch your site! Run `flyctl deploy` and have fun!
 

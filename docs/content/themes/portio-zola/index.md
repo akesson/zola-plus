@@ -58,7 +58,7 @@ This theme is based on [Portio-Hugo](https://github.com/StaticMania/portio-hugo.
 2. Initialize a new project and go to the folder 
 
 ```sh
-zola init <PROJECT_NAME>
+zola-plus init <PROJECT_NAME>
 cd <PROJECT_NAME>
 ```
 

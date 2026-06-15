@@ -41,7 +41,7 @@ export default new Router().static('public')
 5. Build your zola app:
 
 ```bash
-zola build
+zola-plus build
 ```
 
 6. Deploy!

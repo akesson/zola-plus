@@ -54,7 +54,7 @@ $ cd daftpunk
 in the same directory, run
 
 ```sh
-$ zola serve
+$ zola-plus serve
 ```
 
 #### 3. edit files in the `content` directory...

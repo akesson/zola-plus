@@ -51,7 +51,7 @@ Ergo relies on having `paginate_by` variable set in `content/_index.md`.
 Just to double-check to make sure you have the right version. It is not supported to use this theme with a version under 0.11.0.
 
 ### how to serve
-go into your sites directory, and type `zola serve`. You should see your new site at `localhost:1111`.
+go into your sites directory, and type `zola-plus serve`. You should see your new site at `localhost:1111`.
 
 ### Deployment to Github Pages or Netlify
 [Zola](https://www.getzola.org) already has great documentation for deploying to [Netlify](https://www.getzola.org/documentation/deployment/netlify/) or [Github Pages](https://www.getzola.org/documentation/deployment/github-pages/). I won't bore you with a regurgitated explanation.

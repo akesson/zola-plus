@@ -50,7 +50,7 @@ Ported from the Hugo theme [lekh](https://github.com/ba11b0y/lekh)
 Create a new Zola site if you haven't already.
 
 ```bash
-zola init my-site
+zola-plus init my-site
 cd my-site
 git init
 ```

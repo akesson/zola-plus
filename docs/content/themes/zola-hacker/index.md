@@ -39,7 +39,7 @@ Before using the theme, you need to install the [Zola](https://www.getzola.org/d
 ```bash
 git clone git@github.com:en9inerd/zola-hacker.git
 cd zola-hacker
-zola serve
+zola-plus serve
 # open http://127.0.0.1:1111/ in the browser
 ```
 
@@ -51,7 +51,7 @@ install the theme in an existing site step by step.
 ### Step 1: Create a new zola site
 
 ```bash
-zola init mysite
+zola-plus init mysite
 ```
 
 ### Step 2: Install Zola Hacker Theme
@@ -99,10 +99,10 @@ content directories as needed.
 
 ### Step 5: Run the project
 
-Just run `zola serve` in the root path of the project:
+Just run `zola-plus serve` in the root path of the project:
 
 ```bash
-zola serve
+zola-plus serve
 ```
 
 This command will start the Zola development web server accessible by default at

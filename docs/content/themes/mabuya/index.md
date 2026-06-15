@@ -99,7 +99,7 @@ cd mabuya
 3. Serve the site locally:
 
 ```bash
-zola serve
+zola-plus serve
 ```
 
 For more detailed instructions, visit the [documentation](https://www.getzola.org/documentation/themes/installing-and-using-themes/) page about installing and using themes.
@@ -121,7 +121,7 @@ steps:
   - name: Install Zola
     uses: taiki-e/install-action@zola
   - name: Build Zola
-    run: zola check --drafts
+    run: zola-plus check --drafts
     env:
       BUILD_ONLY: true
       GITHUB_TOKEN: ${{/* secrets.GITHUB_TOKEN */}}
@@ -136,7 +136,7 @@ steps:
   - name: Install Zola
     uses: taiki-e/install-action@zola
   - name: Build site
-    run: zola build
+    run: zola-plus build
     env:
       GITHUB_TOKEN: ${{/* secrets.GITHUB_TOKEN */}}
   - name: Upload site artifact

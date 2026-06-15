@@ -154,8 +154,8 @@ After completing the setup, build and serve your site with Zola:
 
 | |terminal command| note|
 |---|---|---|
-|Build the site|```zola build```|site build under `public/`|
-|Serve the site|```zola serve```|locally with live reload|
+|Build the site|```zola-plus build```|site build under `public/`|
+|Serve the site|```zola-plus serve```|locally with live reload|
 
 > [!NOTE]
 > If you are using the Citation Pipeline, use `make build` and `make serve` instead to also process `.src.md` files.

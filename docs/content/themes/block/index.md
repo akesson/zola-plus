@@ -53,7 +53,7 @@ In your zola site directory
 
     ```bash
     cd ../..
-    zola build
+    zola-plus build
     ```
 
 ## Variables

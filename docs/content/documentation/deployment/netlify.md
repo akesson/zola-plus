@@ -11,7 +11,7 @@ If you don't have an account with Netlify, you can [sign up](https://app.netlify
 Once you are in the admin interface, you can add a site from a Git provider (GitHub, GitLab or Bitbucket). At the end
  of this process, you can select the deploy settings for the project:
 
- - build command: `zola build` (replace the version number in the variable by the version you want to use)
+ - build command: `zola-plus build` (replace the version number in the variable by the version you want to use)
  - publish directory: the path to where the `public` directory is
  - image selection: use the latest
  - Environment variables: `ZOLA_VERSION` with for example `0.13.0` as value
@@ -31,7 +31,7 @@ directory in the admin interface.
 # to have a `base` variable but you do need the `publish` and `command` variables.
 base    = "docs"
 publish = "docs/public"
-command = "zola build"
+command = "zola-plus build"
 
 [build.environment]
 # Set the version name that you want to use and Netlify will automatically use it.
@@ -43,7 +43,7 @@ ZOLA_VERSION = "0.13.0"
 # `$DEPLOY_PRIME_URL`.
 
 [context.deploy-preview]
-command = "zola build --base-url $DEPLOY_PRIME_URL"
+command = "zola-plus build --base-url $DEPLOY_PRIME_URL"
 ```
 
 ## Manual deploys
@@ -53,7 +53,7 @@ this through Netlify's web GUI or via the command line.
 
 For a command-line manual deploy, follow these steps:
  1.  Generate a `Personal Access Token` from the settings section of your Netlify account (*not* an OAuth Application).
- 2.  Build your site with `zola build`.
+ 2.  Build your site with `zola-plus build`.
  3.  Create a zip folder containing the `public` directory.
  4.  Run the `curl` command below, filling in your values for PERSONAL_ACCESS_TOKEN_FROM_STEP_1, FILE_NAME.zip
  and SITE_NAME.

@@ -24,7 +24,7 @@ Unlike some SSGs, Zola makes no assumptions regarding the structure of your site
 Please see the detailed [installation instructions for your platform](@/documentation/getting-started/installation.md). With Zola installed, let's initialize our site:
 
 ```
-$ zola init myblog
+$ zola-plus init myblog
 ```
 
 You will be asked a few questions.
@@ -156,7 +156,7 @@ We have templates describing our home page and a page that lists all blog posts.
 Now that we've outlined our site's structure, let's start the Zola development server in the `myblog` directory.
 
 ```
-$ zola serve
+$ zola-plus serve
 Building site...
 Checking all internal links with anchors.
 > Successfully checked 0 internal link(s) with anchors.

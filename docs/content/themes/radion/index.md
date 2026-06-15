@@ -282,7 +282,7 @@ generate `giallo-dark.css` and `giallo-light.css` in the build output.
    README](https://github.com/getzola/giallo) or preview them at
    [textmate-grammars-themes.netlify.app](https://textmate-grammars-themes.netlify.app/)
 2. Update `dark_theme` and `light_theme` with your preferred themes
-3. Run `zola serve` or `zola build` — the CSS files will be regenerated
+3. Run `zola-plus serve` or `zola-plus build` — the CSS files will be regenerated
    automatically
 
 ##### Migration from v1.0.0 (syntect)
@@ -307,7 +307,7 @@ or earlier (Zola <0.22):
    ```
 
 2. Delete the `static/syntax/` directory (old syntect CSS files)
-3. Run `zola build` to generate the new giallo CSS files
+3. Run `zola-plus build` to generate the new giallo CSS files
 
 #### Enhanced Codeblocks (Clipboard Support and Language Tags)
 

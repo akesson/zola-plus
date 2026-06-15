@@ -100,10 +100,10 @@ Creates your first Zola site.
 If `myblog` already exists but only contains hidden files (like `.git`), Zola will alswo populate the site.
 
 ```bash
-zola init myblog
+zola-plus init myblog
 # or
 # populate the current directory
-zola init
+zola-plus init
 ```
 
 Any choices you make during the initialization can be changed later in the `config.toml` file.
@@ -181,8 +181,8 @@ Validate and build the site:
 
 ```bash
 npm run build:css
-zola check
-zola build
+zola-plus check
+zola-plus build
 ```
 
 ### Smoke Checklist

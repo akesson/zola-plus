@@ -52,7 +52,7 @@ See [my personal website](https://cyril-marpaud.gitlab.io) for an example of wha
 
 Initialize a Zola website and install HayFlow:
 ```bash
-zola init mywebsite
+zola-plus init mywebsite
 cd mywebsite
 git clone git@gitlab.com:cyril-marpaud/hayflow.git themes/hayflow
 ```
@@ -62,7 +62,7 @@ Add `theme = "hayflow"` at the top of `config.toml` file to tell Zola to use Hay
 Finally, run...
 
 ```bash
-zola serve
+zola-plus serve
 ```
 ...and go to [http://localhost:1111](http://localhost:1111) to see the landing page in action with the default name displayed (John Doe).
 

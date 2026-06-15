@@ -132,7 +132,7 @@ Your first post content here.' > content/posts/hello-world.md
 4. **Build and serve**:
 
 ```bash
-zola serve
+zola-plus serve
 ```
 
 ## Configuration
@@ -366,7 +366,7 @@ git submodule update --init --recursive
 
 - Set `useCDN = true` for faster font loading
 - Optimize images in `static/` directory
-- Use `zola build --drafts` during development
+- Use `zola-plus build --drafts` during development
 
 ## Contributing
 
@@ -385,7 +385,7 @@ git clone https://github.com/yourusername/archie-zola.git
 cd archie-zola
 
 # Create a test site
-zola init test-site
+zola-plus init test-site
 cd test-site
 echo 'theme = "archie-zola"' >> config.toml
 
@@ -393,7 +393,7 @@ echo 'theme = "archie-zola"' >> config.toml
 ln -s ../archie-zola themes/
 
 # Start developing
-zola serve
+zola-plus serve
 ```
 
 ## License

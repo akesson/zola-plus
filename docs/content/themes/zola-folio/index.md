@@ -59,7 +59,7 @@ git submodule update --remote --merge
 git clone https://github.com/evjrob/zola-folio themes/zola-folio
 ```
 
-Then set `theme = "zola-folio"` in your config.toml file. You can now test the theme locally by running `zola serve` in the terminal and navigating to the localhost URL displayed by the command.
+Then set `theme = "zola-folio"` in your config.toml file. You can now test the theme locally by running `zola-plus serve` in the terminal and navigating to the localhost URL displayed by the command.
 
 ## Configuration
 

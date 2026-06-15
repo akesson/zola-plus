@@ -50,7 +50,7 @@ steps:
     image: alpine:edge
     commands:
       - apk add zola
-      - zola build
+      - zola-plus build
     when:
       event: [push, pull_request]
 

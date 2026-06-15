@@ -57,7 +57,7 @@ homepage = "https://www.hahwul.com"
 Make your zola app
 
 ```bash
-zola init yoursite
+zola-plus init yoursite
 cd yoursite
 ```
 
@@ -205,7 +205,7 @@ More information? [Configuration - Goyo Documents](https://goyo.hahwul.com/get_s
 ## Run
 
 ```bash
-zola serve
+zola-plus serve
 
 # and open http://localhost:1111 in your browser.
 ```

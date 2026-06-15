@@ -78,7 +78,7 @@ page_template = "blog_page.html"
 You can display the result of your website by running:
 
 ```bash
-zola serve
+zola-plus serve
 ```
 
 

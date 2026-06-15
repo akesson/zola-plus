@@ -121,7 +121,7 @@ homepage = "https://blog.jiaxiang.wang"
 1. 运行预览命令，然后在浏览器打开提示的预览地址
 
     ```bash
-    zola serve
+    zola-plus serve
     ```
 
     此时您应该成功访问到博客网站啦

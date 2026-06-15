@@ -67,22 +67,22 @@ jobs:
         if: ${{ endsWith(matrix.target, 'linux-musl') }}
 
       - name: Show version
-        run: ./target/${{ matrix.target }}/release/zola --version
+        run: ./target/${{ matrix.target }}/release/zola-plus --version
 
       - name: Archive (UNIX)
         run: |
           mkdir -p artifacts
-          cp -av target/${{ matrix.target }}/release/zola .
-          OUTPUT_DIR="$(find target -path '*/zola-*/out' -type d)"
+          cp -av target/${{ matrix.target }}/release/zola-plus .
+          OUTPUT_DIR="$(find target -path '*/zola-plus-*/out' -type d)"
           cp -av "$OUTPUT_DIR"/* artifacts
-          tar -czf ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}.tar.gz zola artifacts LICENSE LICENSE-MIT
+          tar -czf ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}.tar.gz zola-plus artifacts LICENSE LICENSE-MIT
         if: ${{ ! startsWith(matrix.os, 'windows') }}
 
       - name: Archive (Windows)
         run: |
           mkdir -p artifacts
-          cp target/${{ matrix.target }}/release/zola.exe .
-          Compress-Archive zola.exe,LICENSE,LICENSE-MIT ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}.zip
+          cp target/${{ matrix.target }}/release/zola-plus.exe .
+          Compress-Archive zola-plus.exe,LICENSE,LICENSE-MIT ${{ github.event.repository.name }}-${{ github.ref_name }}-${{ matrix.target }}.zip
         if: ${{ startsWith(matrix.os, 'windows') }}
 
       - name: Attest Build Provenance

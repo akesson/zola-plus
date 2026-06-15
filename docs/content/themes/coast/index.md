@@ -60,7 +60,7 @@ Please install zola by referring to the following.
 2-1. Create your blog project
 
 ```sh
-zola init < your blog project >
+zola-plus init < your blog project >
 ```
 Please select as follows
 
@@ -75,7 +75,7 @@ Any choices made can be changed by modifying the `config.toml` file later.
 
 Done! Your site was created in /home/hello/Desktop/coast-sample/docs
 
-Get started by moving into the directory and using the built-in server: `zola serve`
+Get started by moving into the directory and using the built-in server: `zola-plus serve`
 Visit https://www.getzola.org for the full documentation.
 ```
 
@@ -263,13 +263,13 @@ in_search_index = true
 3. Build your blog
 
 ```sh
-zola build
+zola-plus build
 ```
 
 4. Check your blog
 
 ```sh
-zola serve
+zola-plus serve
 ```
 
 ### Setup Example

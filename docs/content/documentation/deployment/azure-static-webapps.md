@@ -8,7 +8,7 @@ weight = 60
 ### Setting up Azure Static Web Apps
 Follow the [official documentation](https://learn.microsoft.com/en-us/azure/static-web-apps/get-started-portal?tabs=vanilla-javascript&pivots=github) for configuring the static web app in the Azure portal with the `GitHub` as the selected code hosting platform except for the `Build Details section.
 
-Instead, for the`Build Details` section, set the App location as `./public` since that is where `zola build` will write the site content to by default. Leave the other boxes empty.
+Instead, for the`Build Details` section, set the App location as `./public` since that is where `zola-plus build` will write the site content to by default. Leave the other boxes empty.
 
 After creating the web app, make note of the domain automatically created by Azure and update `base_url` in your repo's `zola.toml` to that URL.
 
@@ -44,7 +44,7 @@ jobs:
         with:
           tool: zola@0.21.0
       - name: Build Static Site
-        run: zola build
+        run: zola-plus build
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1

@@ -84,7 +84,7 @@ This theme requires version 0.19.1 or later of [Zola](https://www.getzola.org/do
 ```bash
 git clone https://github.com/jieiku/abridge.git
 cd abridge
-zola serve
+zola-plus serve
 # open http://127.0.0.1:1111/ in the browser
 ```
 
@@ -95,7 +95,7 @@ The Quick Start shows how to run the theme directly. Next we will use abridge as
 ### 1: Create a new zola site
 
 ```bash
-yes "" | zola init mysite
+yes "" | zola-plus init mysite
 cd mysite
 ```
 
@@ -153,10 +153,10 @@ rsync -r themes/abridge/content .
 
 ### 5: Run the project
 
-Just run `zola serve` in the root path of the project:
+Just run `zola-plus serve` in the root path of the project:
 
 ```bash
-zola serve
+zola-plus serve
 ```
 
 Zola will start the dev web server, accessible by default at `http://127.0.0.1:1111`.

@@ -5,8 +5,8 @@ weight = 15
 
 Zola only has 4 commands: `init`, `build`, `serve` and `check`.
 
-You can view the help for the whole program by running `zola --help` and
-that for a specific command by running `zola <cmd> --help`.
+You can view the help for the whole program by running `zola-plus --help` and
+that for a specific command by running `zola-plus <cmd> --help`.
 
 ## init
 
@@ -14,19 +14,19 @@ Creates the directory structure used by Zola at the given directory after asking
 Any choices made during these prompts can be easily changed by modifying `zola.toml`.
 
 ```bash
-$ zola init my_site
-$ zola init
+$ zola-plus init my_site
+$ zola-plus init
 ```
 
 If the `my_site` directory already exists, Zola will only populate it if it contains only hidden files (dotfiles are ignored). If no `my_site` argument is passed, Zola will try to populate the current directory.
 
-In case you want to attempt to populate a non-empty directory and are brave, you can use `zola init --force`. Note that this will _not_ overwrite existing folders or files; in those cases you will get a `File exists (os error 17)` error or similar.
+In case you want to attempt to populate a non-empty directory and are brave, you can use `zola-plus init --force`. Note that this will _not_ overwrite existing folders or files; in those cases you will get a `File exists (os error 17)` error or similar.
 
 You can initialize a git repository and a Zola site directly from within a new folder:
 
 ```bash
 $ git init
-$ zola init
+$ zola-plus init
 ```
 
 ## build
@@ -34,13 +34,13 @@ $ zola init
 This will build the whole site in the `public` directory (if this directory already exists, it is deleted).
 
 ```bash
-$ zola build
+$ zola-plus build
 ```
 
 You can override the config `base_url` by passing a new URL to the `base-url` flag.
 
 ```bash
-$ zola build --base-url $DEPLOY_URL
+$ zola-plus build --base-url $DEPLOY_URL
 ```
 
 This is useful for example when you want to deploy previews of a site to a dynamic URL, such as Netlify
@@ -49,7 +49,7 @@ deploy previews.
 You can override the default output directory `public` by passing another value to the `output-dir` flag. If this directory already exists, the user will be prompted whether to replace the folder; you can override this prompt by passing the --force flag.
 
 ```bash
-$ zola build --output-dir $DOCUMENT_ROOT
+$ zola-plus build --output-dir $DOCUMENT_ROOT
 ```
 
 You can point to a config file other than `zola.toml` like so (note that the position of the `config` option is important):
@@ -84,21 +84,21 @@ Before starting, Zola will delete the output directory (by default `public` in p
 If you are specifying the directory but are also using the `output-dir` flag, Zola will not use the specified directory if it already exists unless the --force flag is used.
 
 ```bash
-$ zola serve
-$ zola serve --port 2000
-$ zola serve --interface 0.0.0.0
-$ zola serve --interface 0.0.0.0 --port 2000
-$ zola serve --interface 0.0.0.0 --base-url 127.0.0.1
-$ zola serve --interface 0.0.0.0 --base-url /
-$ zola serve --interface 0.0.0.0 --port 2000 --output-dir www/public
-$ zola serve --open
+$ zola-plus serve
+$ zola-plus serve --port 2000
+$ zola-plus serve --interface 0.0.0.0
+$ zola-plus serve --interface 0.0.0.0 --port 2000
+$ zola-plus serve --interface 0.0.0.0 --base-url 127.0.0.1
+$ zola-plus serve --interface 0.0.0.0 --base-url /
+$ zola-plus serve --interface 0.0.0.0 --port 2000 --output-dir www/public
+$ zola-plus serve --open
 ```
 
 The serve command will watch all your content and provide live reload without
 a hard refresh if possible. If you are using WSL2 on Windows, make sure to store the website on the WSL file system.
 
 Some changes cannot be handled automatically and thus live reload may not always work. If you
-fail to see your change or get an error, try restarting `zola serve`.
+fail to see your change or get an error, try restarting `zola-plus serve`.
 
 By default, the live reload will be debounced by one full second so as to more
 gracefully handle multiple changes to your input files in rapid succession. You

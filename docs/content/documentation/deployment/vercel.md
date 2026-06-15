@@ -108,7 +108,7 @@ about Vercel's build images. But if you would like to use older versions (below 
 variable named `ZOLA_LIBC` and set it to `gnu`.
 
 Along with setting "Install Command" to above, you will also need to set "Build Command"
-to `./zola build`, so we can have our site built with the locally downloaded Zola binary
+to `./zola-plus build`, so we can have our site built with the locally downloaded Zola binary
 previously.
 
 If you prefer to use `vercel.json` instead,
@@ -118,7 +118,7 @@ If you prefer to use `vercel.json` instead,
 {
     "framework": null,
     "installCommand": "echo \"${ZOLA_VERSION:-\"latest\"}\" | sed '/^latest$/!s/\\(.*\\)/tags\\/v\\1/' | xargs -I% curl -fsSL \"https://api.github.com/repos/getzola/zola/releases/%\" | grep -oP \"\\\"browser_download_url\\\": ?\\\"\\K(.+linux-${ZOLA_LIBC:-\"musl\"}\\\\.tar\\\\.gz)\" | xargs curl -fsSL | tar -xz",
-    "buildCommand": "./zola build",
+    "buildCommand": "./zola-plus build",
     "outputDirectory": "public"
 }
 ```

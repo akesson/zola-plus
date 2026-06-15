@@ -39,7 +39,7 @@ Redesigned form [hugo resume](https://github.com/eddiewebb/hugo-resume).
 ```bash
 git clone git@github.com:alongwy/zola-resume.git
 cd zola-resume
-zola serve
+zola-plus serve
 # open http://127.0.0.1:1111/
 ```
 
@@ -49,7 +49,7 @@ Just earlier we showed you how to run the theme directly. Now we start to instal
 ### Step 1: Create a new zola site
 
 ```bash
-zola init mysite
+zola-plus init mysite
 ```
 
 ### Step 2: Install zola-resume
@@ -111,10 +111,10 @@ cp -r themes/zola-resume/content .
 You can modify or add new posts in the content/blog, content/projects or other content directories as needed.
 
 ### Step 5: Run the project
-Just run zola serve in the root path of the project:
+Just run zola-plus serve in the root path of the project:
 
 ```
-zola serve
+zola-plus serve
 ```
 
 This will start the Zola development web server accessible by default at http://127.0.0.1:1111. Saved changes will live reload in the browser.

@@ -73,14 +73,14 @@ Powered by [Zola](https://getzola.org/). Styled with Tailwind CSS & Font Awesome
 
 3. **Serve locally**:
    ```bash
-   zola serve
+   zola-plus serve
    ```
 
    After making necessary changes to HTML files present under `partials/` visit [http://127.0.0.1:1111](http://127.0.0.1:1111)
 
 4. **Build static site**:
    ```bash
-   zola build
+   zola-plus build
    ```
    All files output to `/public`
 
@@ -90,7 +90,7 @@ Powered by [Zola](https://getzola.org/). Styled with Tailwind CSS & Font Awesome
 
 1. Run Zola build:
    ```bash
-   zola build
+   zola-plus build
    ```
 
 2. Commit and push the contents of the `public/` folder to your `gh-pages` branch
@@ -105,7 +105,7 @@ Powered by [Zola](https://getzola.org/). Styled with Tailwind CSS & Font Awesome
 
 2. Set **Build Command** to:
    ```bash
-   zola build
+   zola-plus build
    ```
 
 3. Set **Output Directory** to:

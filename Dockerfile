@@ -18,9 +18,9 @@ RUN if [ "${USE_GH_RELEASE}" = "true" ]; then \
     tar -xzvf zola.tar.gz zola; \
   else \
     cargo build --release && \
-    cp target/$(uname -m)-unknown-linux-gnu/release/zola zola; \
+    cp target/$(uname -m)-unknown-linux-gnu/release/zola-plus zola; \
   fi && ./zola --version
 
 FROM gcr.io/distroless/cc-debian12
-COPY --from=builder /app/zola /bin/zola
-ENTRYPOINT [ "/bin/zola" ]
+COPY --from=builder /app/zola /bin/zola-plus
+ENTRYPOINT [ "/bin/zola-plus" ]

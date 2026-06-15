@@ -23,7 +23,7 @@ main() {
 
     git submodule update --init --recursive
 
-    ./zola build
+    ./zola-plus build
 }
 
 set -euo pipefail

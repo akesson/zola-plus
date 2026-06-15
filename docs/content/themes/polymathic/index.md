@@ -80,7 +80,7 @@ The theme comes with several shortcodes for building forms, galleries, navigatio
 
 ## Install
 
-Once you already have zola installed and ran `zola init`, then run from your project directory
+Once you already have zola installed and ran `zola-plus init`, then run from your project directory
 
     $ git init
     $ git submodule add https://github.com/anvlkv/polymathic themes/polymathic

@@ -44,7 +44,7 @@ Before using the theme, you need to install the [Zola](https://www.getzola.org/d
 ```bash
 git clone git@github.com:aaranxu/tale-zola.git
 cd tale-zola
-zola serve
+zola-plus serve
 # open http://127.0.0.1:1111/ in the browser
 ```
 
@@ -56,7 +56,7 @@ install the theme in an existing site step by step.
 ### Step 1: Create a new zola site
 
 ```bash
-zola init blog
+zola-plus init blog
 ```
 
 ### Step 2: Install Tale-Zola
@@ -129,10 +129,10 @@ cp -r themes/tale-zola/content .
 
 ### Step 5: Run the project
 
-Just run `zola serve` in the root path of the project:
+Just run `zola-plus serve` in the root path of the project:
 
 ```bash
-zola serve
+zola-plus serve
 ```
 
 Tale-Zola will start the Zola development web server accessible by default at

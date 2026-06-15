@@ -59,7 +59,7 @@ This repository also serves as the demo site source, so the files in `content/`,
 Create a new Zola site:
 
 ```bash
-zola init myblog
+zola-plus init myblog
 cd myblog
 ```
 
@@ -167,13 +167,13 @@ still_show_author = true
 Preview the theme from this repository with:
 
 ```bash
-zola serve
+zola-plus serve
 ```
 
 Or from a separate Zola site that uses the theme:
 
 ```bash
-zola serve
+zola-plus serve
 ```
 
 Then open the local server shown by Zola, usually <http://127.0.0.1:1111>.

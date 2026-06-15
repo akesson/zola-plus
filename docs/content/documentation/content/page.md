@@ -111,7 +111,7 @@ updated =
 # will not be rendered.
 weight = 0
 
-# A draft page is only loaded if the `--drafts` flag is passed to `zola build`, `zola serve` or `zola check`.
+# A draft page is only loaded if the `--drafts` flag is passed to `zola-plus build`, `zola-plus serve` or `zola-plus check`.
 draft = false
 
 # When set to "false" Zola will not create a separate folder with index.html inside for this page.

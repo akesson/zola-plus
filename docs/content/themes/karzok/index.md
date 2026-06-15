@@ -51,7 +51,7 @@ homepage = ""
 ### 1. Create a new zola site
 
 ```sh
-zola init zola_site
+zola-plus init zola_site
 ```
 
 ### 2. Download this theme to you themes directory:
@@ -96,10 +96,10 @@ pnpm ci
 pnpm run build
 ```
 
-2. Just run `zola serve` in the root path of the project
+2. Just run `zola-plus serve` in the root path of the project
 
 ```zsh
-zola serve
+zola-plus serve
 ```
 
 Open in favorite browser [http://127.0.0.1:1111](http://127.0.0.1:1111). Saved

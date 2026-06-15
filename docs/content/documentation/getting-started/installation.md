@@ -239,7 +239,7 @@ From a terminal, you can now run the following commands:
 
 ```sh
 $ cargo install --locked --git https://github.com/getzola/zola
-$ zola --version
+$ zola-plus --version
 ```
 
 If you encountered compilation errors like `error: failed to run custom build command for 'ring v0.16.20'`, you can try the command below instead:
@@ -248,5 +248,5 @@ If you encountered compilation errors like `error: failed to run custom build co
 $ cargo install --locked --no-default-features --features=native-tls --git https://github.com/getzola/zola
 ```
 
-Cargo will install the `zola` binary in `~/.cargo/bin/`.
+Cargo will install the `zola-plus` binary in `~/.cargo/bin/`.
 You can move it into the repository of your site if you want.

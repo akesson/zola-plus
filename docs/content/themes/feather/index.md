@@ -78,6 +78,6 @@ You can specify `tags` taxonomies .
 
 # Developing & Contributing
 Because feather comes with example content, you can run the theme just like any Zola
-blog with `zola serve`.
+blog with `zola-plus serve`.
 
         

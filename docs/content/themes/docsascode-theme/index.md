@@ -60,7 +60,7 @@ But, zola is amazing static site generator, so you feel free to
 2. again delete demo content and add your own
 3. change name and domain in config.toml/index.md
 4. setup zola (win, linux, mac)
-5. execute zola build
+5. execute zola-plus build
 6. host builded html-output anywhere you want
 
 Zola supports Netlify and other similar services, or you can decide to create your own CI/CD process. 

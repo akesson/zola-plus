@@ -1,5 +1,5 @@
 [package]
-name = "zola"
+name = "zola-plus"
 version = "0.22.1"
 authors = ["Vincent Prouillet <hello@vincentprouillet.com>"]
 edition = "2024"
@@ -20,7 +20,7 @@ tauri-winres = "0.3"
 time = "0.3"
 
 [[bin]]
-name = "zola"
+name = "zola-plus"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -145,5 +145,5 @@ strip = true
 debug = 0
 
 [package.metadata.winres]
-OriginalFilename = "zola.exe"
-InternalName = "zola"
+OriginalFilename = "zola-plus.exe"
+InternalName = "zola-plus"

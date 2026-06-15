@@ -132,9 +132,9 @@ If you want to use this repository as the base for your new blog, this is the fa
 
 2. **Run the site:**
    ```bash
-   zola serve
+   zola-plus serve
    ```
-   Now open the link provided by `zola serve` in your browser.
+   Now open the link provided by `zola-plus serve` in your browser.
 
 3. **Configure:**
    Adjust `base_url` and other settings in `zola.toml` to your needs.
@@ -186,7 +186,7 @@ Configuration settings used by this theme:
   If you want the same style in both modes, set both to the same theme.
   Zolarwind expects both values to be set, because the highlight files are loaded on templates that render Markdown content (posts/pages).
   If you add code blocks directly in other templates, include the highlight files there as well.
-  Note: If you change `light_theme` or `dark_theme`, delete `static/giallo-light.css` and `static/giallo-dark.css` and run `zola build` to regenerate them; Zola does not overwrite existing giallo files.
+  Note: If you change `light_theme` or `dark_theme`, delete `static/giallo-light.css` and `static/giallo-dark.css` and run `zola-plus build` to regenerate them; Zola does not overwrite existing giallo files.
 
 - **error_on_missing_language**: If the language to be highlighted is not found, how should Zola handle this? Set to `true` so missing languages cause a build error.
 
@@ -217,7 +217,7 @@ The `[extra]` section is where you can place any custom variables you want to be
 
 - **copyright**: Optional.
   A template for the copyright notice.
-  It includes a placeholder `{year}` which is dynamically replaced with the current year of your `zola build` run.
+  It includes a placeholder `{year}` which is dynamically replaced with the current year of your `zola-plus build` run.
 
 - **site_description**: Optional.
   A brief description is displayed on the site's banner.
@@ -268,11 +268,11 @@ If you add or adjust templates, avoid hardcoded `href="/..."` or `src="/..."`. A
 
 ### Local testing with a subpath
 
-`zola serve` always mounts at `/`, so it does not exercise subpath behavior. To test subpaths locally, build into a
+`zola-plus serve` always mounts at `/`, so it does not exercise subpath behavior. To test subpaths locally, build into a
 subdirectory and serve the output from there:
 
 ```bash
-zola build --base-url http://127.0.0.1:1111/demo/zolarwind -o public/demo/zolarwind
+zola-plus build --base-url http://127.0.0.1:1111/demo/zolarwind -o public/demo/zolarwind
 python -m http.server --directory public 1111
 ```
 
@@ -545,7 +545,7 @@ This is what the relevant part of it looks like for the stand-alone site:
 "scripts": {
   "css:build": "npx tailwindcss -i ./css/main.css -o ./static/css/generated.css --minify",
   "css:watch": "npx tailwindcss -i ./css/main.css -o ./static/css/generated.css --watch",
-  "server": "zola serve"
+  "server": "zola-plus serve"
 }
 ```
 
@@ -555,7 +555,7 @@ Now change it so that the input file `css/main.css` will be the file `themes/zol
 "scripts": {
   "css:build": "npx tailwindcss -i ./themes/zolarwind/css/main.css -o ./static/css/generated.css --minify",
   "css:watch": "npx tailwindcss -i ./themes/zolarwind/css/main.css -o ./static/css/generated.css --watch",
-  "server": "zola serve"
+  "server": "zola-plus serve"
 }
 ```
 
@@ -594,7 +594,7 @@ When these files change, run the `css:build` script from `package.json`. This re
 from `package.json` (installed with `npm install`). Running `npm run css:watch` monitors the files and triggers CSS
 generation on changes. This ensures `static/css/generated.css` remains current.
 
-It is recommended to have two terminals open: one for the Zola server (`zola serve`) and another for the CSS watch
+It is recommended to have two terminals open: one for the Zola server (`zola-plus serve`) and another for the CSS watch
 script (`npm run css:watch`). The browser reloads with updated CSS when files are modified.
 
 ---

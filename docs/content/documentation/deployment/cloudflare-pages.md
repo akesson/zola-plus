@@ -28,7 +28,7 @@ When working with Cloudflare Pages, you'll often use preview deployments for tes
 To fix this, modify your build command in the Cloudflare Pages configuration to dynamically set the base URL depending on the environment:
 
 ```sh
-if [ "$CF_PAGES_BRANCH" = "main" ]; then zola build; else zola build --base-url $CF_PAGES_URL; fi
+if [ "$CF_PAGES_BRANCH" = "main" ]; then zola-plus build; else zola-plus build --base-url $CF_PAGES_URL; fi
 ```
 
 This command:

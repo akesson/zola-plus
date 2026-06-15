@@ -51,7 +51,7 @@ You can easily adapt it to your language by editing the files in `themes/zola-th
 Create your Zola site, and import this theme:
 
 ```bash
-zola init NAME
+zola-plus init NAME
 cd NAME/themes
 git clone https://github.com/elegaanz/zola-theme-course.git
 cd ..

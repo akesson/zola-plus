@@ -77,7 +77,7 @@ jobs:
         with:
           tool: zola@0.17.2
       - name: Build
-        run: zola build
+        run: zola-plus build
       - uses: reggionick/s3-deploy@v4
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
