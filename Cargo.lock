@@ -2631,6 +2631,7 @@ dependencies = [
  "regex",
  "templates",
  "tera",
+ "unicode-width",
  "utils",
 ]
 

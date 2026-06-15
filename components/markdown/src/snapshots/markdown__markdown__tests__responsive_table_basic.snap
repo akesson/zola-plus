@@ -1,0 +1,9 @@
+---
+source: components/markdown/src/markdown.rs
+expression: render_responsive_table(content)
+---
+<div class="rt rt--cards rt--bp-28" style="--rt-label:10ch"><table><thead><tr><th scope="col">Name</th><th scope="col">Department</th></tr></thead><tbody>
+<tr><td data-label="Name">Ada</td><td data-label="Department">Platform</td></tr>
+<tr><td data-label="Name">Linus</td><td data-label="Department">Kernel</td></tr>
+</tbody></table>
+</div>

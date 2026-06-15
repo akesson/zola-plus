@@ -14,6 +14,7 @@ index_format = "elasticlunr_json"
 
 [markdown]
 external_links_class = "external"
+responsive_tables = true
 
 [markdown.highlighting]
 theme = "catppuccin-mocha"

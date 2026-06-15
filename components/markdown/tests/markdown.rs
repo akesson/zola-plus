@@ -483,3 +483,36 @@ fn github_alerts() {
     let body = common::render_with_config(&markdown, config).unwrap().body;
     insta::assert_snapshot!(body);
 }
+
+#[test]
+fn can_render_responsive_tables() {
+    let mut config = Config::default_for_test();
+    config.markdown.responsive_tables = true;
+    let markdown = r#"A regular table becomes responsive:
+
+| Name | Department | Started |
+| ---- | ---------- | ------- |
+| Ada | Platform | 2021 |
+| Linus | Kernel | 2019 |
+
+And one can be opted out per-table:
+
+<!-- rt: off -->
+
+| x | y |
+| - | - |
+| 1 | 2 |
+"#;
+    let body = common::render_with_config(markdown, config).unwrap().body;
+    insta::assert_snapshot!(body);
+}
+
+#[test]
+fn responsive_tables_off_by_default() {
+    // With the default config the table HTML is unchanged (no wrapper / data-label).
+    let markdown = "| Name | Role |\n| ---- | ---- |\n| Ada | Eng |";
+    let body = common::render(markdown).unwrap().body;
+    assert!(!body.contains("data-label"));
+    assert!(!body.contains("class=\"rt"));
+    insta::assert_snapshot!(body);
+}

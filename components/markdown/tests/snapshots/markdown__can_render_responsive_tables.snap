@@ -1,0 +1,14 @@
+---
+source: components/markdown/tests/markdown.rs
+expression: body
+---
+<p>A regular table becomes responsive:</p>
+<div class="rt rt--cards rt--bp-40" style="--rt-label:10ch"><table><thead><tr><th scope="col">Name</th><th scope="col">Department</th><th scope="col">Started</th></tr></thead><tbody>
+<tr><td data-label="Name">Ada</td><td data-label="Department">Platform</td><td data-label="Started">2021</td></tr>
+<tr><td data-label="Name">Linus</td><td data-label="Department">Kernel</td><td data-label="Started">2019</td></tr>
+</tbody></table>
+</div>
+<p>And one can be opted out per-table:</p>
+<table><thead><tr><th>x</th><th>y</th></tr></thead><tbody>
+<tr><td>1</td><td>2</td></tr>
+</tbody></table>

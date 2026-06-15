@@ -162,6 +162,10 @@ pub struct Markdown {
     pub insert_anchor_links: InsertAnchor,
     /// Whether to enable GitHub-style alerts
     pub github_alerts: bool,
+    /// Whether markdown tables are made responsive: each table is wrapped and its body cells
+    /// get a `data-label` of their column header, so CSS can reflow them into cards on narrow
+    /// containers. JS-free; requires the accompanying stylesheet. Off by default.
+    pub responsive_tables: bool,
 }
 
 impl Markdown {
@@ -233,6 +237,7 @@ impl Default for Markdown {
             lazy_async_image: false,
             insert_anchor_links: InsertAnchor::None,
             github_alerts: false,
+            responsive_tables: false,
         }
     }
 }

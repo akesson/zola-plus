@@ -20,8 +20,9 @@ use utils::slugs::slugify_anchors;
 use utils::table_of_contents::{Heading, make_table_of_contents};
 use utils::types::InsertAnchor;
 
-use self::cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
+use self::cmark::{Alignment, Event, LinkType, Options, Parser, Tag, TagEnd};
 use crate::shortcode::{SHORTCODE_PLACEHOLDER, Shortcode};
+use unicode_width::UnicodeWidthStr;
 
 const CONTINUE_READING: &str = "<span id=\"continue-reading\"></span>";
 const SUMMARY_CUTOFF_TEMPLATE: &str = "summary-cutoff.html";
@@ -222,6 +223,250 @@ fn get_text(parser_slice: &[Event]) -> String {
     }
 
     title
+}
+
+// --- Responsive tables -------------------------------------------------------
+//
+// When `markdown.responsive_tables` is on, each markdown table is wrapped in a
+// `<div class="rt rt--cards rt--bp-N" style="--rt-label:Mch">` and every body
+// `<td>` gets a `data-label` of its column header. The accompanying CSS uses a
+// container query (`@container (max-width: Nch)`) to reflow the table into cards
+// on narrow containers. This is the build-time, JS-free equivalent of injecting
+// header labels at runtime. The breakpoint `N` is estimated from the table's
+// content (in `ch`), the long-header width `M` lets the CSS size the label
+// column. See docs/content/documentation/content/tables.md.
+
+/// One verbose cell shouldn't push the breakpoint to "always cards": cap each
+/// column's measured width (in `ch`) since long text wraps anyway.
+const RT_CELL_CAP: usize = 24;
+/// Per-column padding/border slack added to the width estimate (in `ch`).
+const RT_PAD_CH: usize = 4;
+/// The estimate measures content in `ch` (the width of `0`), but real glyphs are
+/// often wider — capitals like `W`/`M` are ~1.5x `0`. Scale the content sum up so
+/// wide-glyph tables still card *before* their content overflows the breakpoint.
+/// Errs toward carding slightly early, which is the safe direction. Kept modest:
+/// a larger factor mostly inflates wide multi-column tables (which already get
+/// generous slack from `ch` over-counting normal text) without rescuing the
+/// pathological all-caps case, whose deficit is bounded by the ladder snap anyway.
+const RT_WIDTH_SCALE_PCT: usize = 115;
+/// Breakpoint ladder, in `ch`. MUST match the SCSS `@for` ladder shipped for the
+/// feature (docs/sass/_responsive-tables.scss).
+const RT_BP_MIN: u32 = 16;
+const RT_BP_MAX: u32 = 160;
+const RT_BP_STEP: u32 = 4;
+
+/// Matches a per-table `<!-- rt: ... -->` directive comment.
+static RT_DIRECTIVE_RE: Lazy<Regex> = Lazy::new(|| {
+    RegexBuilder::new(r#"<!--\s*rt:\s*(.*?)\s*-->"#)
+        .case_insensitive(true)
+        .dot_matches_new_line(true)
+        .build()
+        .unwrap()
+});
+
+/// Per-table overrides parsed from a `<!-- rt: ... -->` directive.
+#[derive(Default, Clone)]
+struct TableDirective {
+    /// Render a plain table (skip the responsive wrapper entirely).
+    off: bool,
+    /// Force the breakpoint (in `ch`) instead of estimating it.
+    bp: Option<u32>,
+}
+
+/// Parse a directive comment. Returns the overrides plus whether the comment was
+/// the entire HTML event (so it can be dropped from the output).
+fn parse_table_directive(html: &str) -> Option<(TableDirective, bool)> {
+    let caps = RT_DIRECTIVE_RE.captures(html)?;
+    let whole = caps.get(0).unwrap().as_str();
+    let args = caps.get(1).unwrap().as_str();
+    let mut dir = TableDirective::default();
+    for tok in args.split_whitespace() {
+        let tok = tok.to_ascii_lowercase();
+        if tok == "off" || tok == "none" {
+            dir.off = true;
+        } else if let Some(v) = tok.strip_prefix("bp=") {
+            if v == "auto" {
+                dir.bp = None;
+            } else {
+                let digits: String = v.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if let Ok(n) = digits.parse::<u32>() {
+                    dir.bp = Some(n);
+                }
+            }
+        }
+        // Unknown tokens are ignored for forward compatibility.
+    }
+    Some((dir, html.trim() == whole))
+}
+
+/// Clamp to the ladder range and snap up to the next rung.
+fn rt_snap_breakpoint(n: u32) -> u32 {
+    n.clamp(RT_BP_MIN, RT_BP_MAX).div_ceil(RT_BP_STEP) * RT_BP_STEP
+}
+
+fn rt_align_attr(align: Alignment) -> &'static str {
+    match align {
+        Alignment::Left => " style=\"text-align: left\"",
+        Alignment::Center => " style=\"text-align: center\"",
+        Alignment::Right => " style=\"text-align: right\"",
+        Alignment::None => "",
+    }
+}
+
+/// Rewrite table events in place so each table is wrapped and its body cells carry
+/// a `data-label`. `Table`/`TableHead`/`TableRow` stay structured (cmark renders
+/// `<table><thead><tr>`); only `TableCell` boundaries become raw HTML so we can add
+/// attributes cmark's renderer won't.
+fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
+    if !events.iter().any(|e| matches!(e, Event::Start(Tag::Table(_)))) {
+        return;
+    }
+
+    let old = std::mem::take(events);
+    let mut out: Vec<Event> = Vec::with_capacity(old.len() + 16);
+    let mut pending = TableDirective::default();
+    let mut it = old.into_iter();
+
+    while let Some(ev) = it.next() {
+        match ev {
+            Event::Html(ref html) if RT_DIRECTIVE_RE.is_match(html) => {
+                if let Some((dir, standalone)) = parse_table_directive(html) {
+                    pending = dir;
+                    // Keep the event only if it carried more than the directive.
+                    if !standalone {
+                        out.push(ev);
+                    }
+                } else {
+                    out.push(ev);
+                }
+            }
+            Event::Start(Tag::Table(aligns)) => {
+                // Collect the table region (up to and including End(Table)).
+                let mut table: Vec<Event> = Vec::new();
+                for e in it.by_ref() {
+                    let is_end = matches!(e, Event::End(TagEnd::Table));
+                    table.push(e);
+                    if is_end {
+                        break;
+                    }
+                }
+                let directive = std::mem::take(&mut pending);
+                emit_table(&mut out, aligns, table, directive);
+            }
+            other => out.push(other),
+        }
+    }
+
+    *events = out;
+}
+
+/// Emit one table: either unchanged (directive `off`) or wrapped with `data-label`s.
+/// `table` holds the events after `Start(Table)` up to and including `End(Table)`.
+fn emit_table<'a>(
+    out: &mut Vec<Event<'a>>,
+    aligns: Vec<Alignment>,
+    table: Vec<Event<'a>>,
+    directive: TableDirective,
+) {
+    if directive.off {
+        out.push(Event::Start(Tag::Table(aligns)));
+        out.extend(table);
+        return;
+    }
+
+    let ncols = aligns.len().max(1);
+
+    // Pass 1: per-column header text + max display width (incl. header rows).
+    let mut headers: Vec<String> = vec![String::new(); ncols];
+    let mut col_width: Vec<usize> = vec![0; ncols];
+    let mut max_label = 0usize;
+    {
+        let mut in_head = false;
+        let mut col = 0usize;
+        let mut j = 0;
+        while j < table.len() {
+            match &table[j] {
+                Event::Start(Tag::TableHead) => {
+                    in_head = true;
+                    col = 0;
+                }
+                Event::End(TagEnd::TableHead) => in_head = false,
+                Event::Start(Tag::TableRow) => col = 0,
+                Event::Start(Tag::TableCell) => {
+                    let mut k = j + 1;
+                    while k < table.len()
+                        && !matches!(table[k], Event::End(TagEnd::TableCell))
+                    {
+                        k += 1;
+                    }
+                    let text = get_text(&table[j + 1..k]);
+                    let width = UnicodeWidthStr::width(text.as_str());
+                    if col < ncols {
+                        col_width[col] = col_width[col].max(width.min(RT_CELL_CAP));
+                        if in_head {
+                            headers[col] = text;
+                            // Cap so one long header can't create an over-wide label column.
+                            max_label = max_label.max(width.min(RT_CELL_CAP));
+                        }
+                    }
+                    col += 1;
+                    j = k; // continue from the End(TableCell)
+                }
+                _ => {}
+            }
+            j += 1;
+        }
+    }
+
+    let content = col_width.iter().sum::<usize>() * RT_WIDTH_SCALE_PCT / 100;
+    let estimate = (content + RT_PAD_CH * ncols) as u32;
+    let bp = rt_snap_breakpoint(directive.bp.unwrap_or(estimate));
+    let label_ch = max_label.max(1);
+
+    out.push(Event::Html(
+        format!(r#"<div class="rt rt--cards rt--bp-{bp}" style="--rt-label:{label_ch}ch">"#).into(),
+    ));
+    out.push(Event::Start(Tag::Table(aligns.clone())));
+
+    // Pass 2: re-emit, replacing cell boundaries with attribute-carrying raw HTML.
+    let mut in_head = false;
+    let mut col = 0usize;
+    for ev in table {
+        match ev {
+            Event::Start(Tag::TableHead) => {
+                in_head = true;
+                col = 0;
+                out.push(ev);
+            }
+            Event::End(TagEnd::TableHead) => {
+                in_head = false;
+                out.push(ev);
+            }
+            Event::Start(Tag::TableRow) => {
+                col = 0;
+                out.push(ev);
+            }
+            Event::Start(Tag::TableCell) => {
+                let align = aligns.get(col).copied().unwrap_or(Alignment::None);
+                let align_attr = rt_align_attr(align);
+                let tag = if in_head {
+                    format!("<th{align_attr} scope=\"col\">")
+                } else {
+                    let mut label = String::new();
+                    let header = headers.get(col).map(String::as_str).unwrap_or("");
+                    escape_html(&mut label, header).expect("writing to a String cannot fail");
+                    format!("<td{align_attr} data-label=\"{label}\">")
+                };
+                out.push(Event::Html(tag.into()));
+            }
+            Event::End(TagEnd::TableCell) => {
+                out.push(Event::Html(if in_head { "</th>".into() } else { "</td>".into() }));
+                col += 1;
+            }
+            other => out.push(other),
+        }
+    }
+    out.push(Event::Html("</div>".into()));
 }
 
 fn get_heading_refs(events: &[Event]) -> Vec<HeadingRef> {
@@ -833,6 +1078,10 @@ pub fn markdown_to_html(
             convert_footnotes_to_github_style(&mut events);
         }
 
+        if context.config.markdown.responsive_tables {
+            transform_tables(&mut events);
+        }
+
         let continue_reading = events
             .iter()
             .position(|e| matches!(e, Event::Html(CowStr::Borrowed(CONTINUE_READING))))
@@ -1083,5 +1332,60 @@ mod tests {
         let mut html = String::new();
         cmark::html::push_html(&mut html, events.into_iter());
         assert_snapshot!(html);
+    }
+
+    fn render_responsive_table(content: &str) -> String {
+        let mut opts = Options::empty();
+        opts.insert(Options::ENABLE_TABLES);
+        opts.insert(Options::ENABLE_STRIKETHROUGH);
+        opts.insert(Options::ENABLE_TASKLISTS);
+        opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+        let mut events: Vec<_> = Parser::new_ext(content, opts).collect();
+        transform_tables(&mut events);
+        let mut html = String::new();
+        cmark::html::push_html(&mut html, events.into_iter());
+        html
+    }
+
+    #[test]
+    fn responsive_table_basic() {
+        // Wrapper + per-cell data-label + estimated bp + --rt-label from longest header.
+        let content =
+            "| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
+        assert_snapshot!(render_responsive_table(content));
+    }
+
+    #[test]
+    fn responsive_table_alignment() {
+        // Column alignment is replicated onto the raw <th>/<td>.
+        let content = "| L | C | R |\n|:--|:-:|--:|\n| a | b | c |";
+        assert_snapshot!(render_responsive_table(content));
+    }
+
+    #[test]
+    fn responsive_table_inline_markup() {
+        // Cells keep inline markup; data-label uses the header's plain text only.
+        let content =
+            "| **Bold head** | `code` |\n| --- | --- |\n| _em_ | [x](https://example.com) |";
+        assert_snapshot!(render_responsive_table(content));
+    }
+
+    #[test]
+    fn responsive_table_bp_override() {
+        let content = "<!-- rt: bp=80 -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        assert_snapshot!(render_responsive_table(content));
+    }
+
+    #[test]
+    fn responsive_table_off_directive() {
+        // `off` emits a plain table with no wrapper and no data-label.
+        let content = "<!-- rt: off -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        assert_snapshot!(render_responsive_table(content));
+    }
+
+    #[test]
+    fn responsive_table_no_table_is_noop() {
+        let content = "Just a paragraph, no table here.";
+        assert_snapshot!(render_responsive_table(content));
     }
 }
