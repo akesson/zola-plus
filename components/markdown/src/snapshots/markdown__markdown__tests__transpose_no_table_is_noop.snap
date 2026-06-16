@@ -1,0 +1,5 @@
+---
+source: components/markdown/src/markdown.rs
+expression: render_transpose(content)
+---
+<p>Just a paragraph, no table here.</p>

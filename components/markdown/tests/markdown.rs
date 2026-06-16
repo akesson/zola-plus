@@ -517,3 +517,37 @@ fn tables_are_plain_without_reflow_directive() {
     assert!(!body.contains("<style"));
     insta::assert_snapshot!(body);
 }
+
+#[test]
+fn can_render_table_transpose() {
+    // A table transposes only when it carries a `<!-- transpose: <length> -->`
+    // directive; an unannotated table is left as a plain table. Transpose only wraps
+    // the table (breakpoint + column-count classes); the cells are untouched.
+    let markdown = r#"A table transposes when annotated:
+
+<!-- transpose: 40rem -->
+
+| Name | Department | Started |
+| ---- | ---------- | ------- |
+| Ada | Platform | 2021 |
+| Linus | Kernel | 2019 |
+
+A table without the annotation stays plain:
+
+| x | y |
+| - | - |
+| 1 | 2 |
+"#;
+    let body = common::render(markdown).unwrap().body;
+    insta::assert_snapshot!(body);
+}
+
+#[test]
+fn tables_are_plain_without_transpose_directive() {
+    // With no directive the table HTML is unchanged (no transpose wrapper).
+    let markdown = "| Name | Role |\n| ---- | ---- |\n| Ada | Eng |";
+    let body = common::render(markdown).unwrap().body;
+    assert!(!body.contains("class=\"transpose"));
+    assert!(!body.contains("<style"));
+    insta::assert_snapshot!(body);
+}

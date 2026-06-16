@@ -6,3 +6,9 @@
 | Name | Role |
 | ---- | ---- |
 | Ada | Eng |
+
+<!-- transpose: 40rem -->
+
+| Lang | Year |
+| ---- | ---- |
+| Rust | 2015 |

@@ -225,24 +225,40 @@ fn get_text(parser_slice: &[Event]) -> String {
     title
 }
 
-// --- Table reflow ------------------------------------------------------------
+// --- Responsive tables (reflow + transpose) ----------------------------------
 //
-// A markdown table reflows into "cards" on narrow containers when it carries a
-// `<!-- reflow: <length> -->` directive on its own line directly above it (with a
-// blank line in between). For such a table we wrap it in
-// `<div class="reflow reflow-bp-<token>">`, give every body `<td>` a `data-label`
-// of its column header, and add `scope="col"` to the headers.
+// A markdown table becomes responsive on narrow containers when it carries a
+// directive on its own line directly above it (with a blank line in between):
+//
+//   * `<!-- reflow: <length> -->` — each row turns into a "card" of
+//     `Header  Value` pairs. We wrap the table in
+//     `<div class="reflow reflow-bp-<token>">`, give every body `<td>` a
+//     `data-label` of its column header, and add `scope="col"` to the headers.
+//   * `<!-- transpose: <length> -->` — the table visually flips so the header
+//     row becomes a left-hand label column. We only wrap it in
+//     `<div class="transpose transpose-bp-<token> transpose-cols-<n>">`; the
+//     cells are left untouched (a pure CSS-grid flip, see `transpose_css`).
 //
 // The breakpoint lives in the class (`reflow-bp-65rem`), not in the markup's CSS.
-// Each distinct breakpoint used across the site gets one container query in a
-// generated `reflow.css` (see `reflow_css`), which the site links once — exactly
-// how class-based syntax highlighting ships `giallo.css`. (A container query can't
-// read a custom property in its condition, so the value must live in a rule keyed
-// by class.) The generated CSS does *reflow only* (no margins/colours/fonts); the
-// stable `.reflow` class is the author's hook for any cosmetic styling.
+// Each distinct breakpoint used across the site gets one container query in the
+// generated stylesheet (see `reflow_css` / `transpose_css`), which the site links
+// once as `responsive-tables.css` — exactly how class-based syntax highlighting
+// ships `giallo.css`. (A container query can't read a custom property in its
+// condition, so the value must live in a rule keyed by class.) The generated CSS
+// does the reflow/transpose *only* (no margins/colours/fonts); the stable
+// `.reflow` / `.transpose` classes are the author's hook for cosmetic styling.
 //
-// A table without the directive is left completely untouched. See
+// A table without a directive is left completely untouched. See
 // docs/content/documentation/content/tables.md.
+
+/// The responsive treatment a directive selects for the table that follows it.
+#[derive(Clone, Copy)]
+enum TableMode {
+    /// `<!-- reflow: <length> -->` — rows become cards (see `emit_reflow_table`).
+    Reflow,
+    /// `<!-- transpose: <length> -->` — table flips (see `emit_transpose_table`).
+    Transpose,
+}
 
 /// Matches a per-table `<!-- reflow: <length> -->` directive comment.
 static REFLOW_DIRECTIVE_RE: Lazy<Regex> = Lazy::new(|| {
@@ -252,6 +268,28 @@ static REFLOW_DIRECTIVE_RE: Lazy<Regex> = Lazy::new(|| {
         .build()
         .unwrap()
 });
+
+/// Matches a per-table `<!-- transpose: <length> -->` directive comment.
+static TRANSPOSE_DIRECTIVE_RE: Lazy<Regex> = Lazy::new(|| {
+    RegexBuilder::new(r#"<!--\s*transpose:\s*(.*?)\s*-->"#)
+        .case_insensitive(true)
+        .dot_matches_new_line(true)
+        .build()
+        .unwrap()
+});
+
+/// The responsive mode a raw-HTML event selects, if any. `reflow` is checked first
+/// so that, were both somehow present in one comment, it would win the match — but
+/// the two are mutually exclusive in practice.
+fn directive_mode(html: &str) -> Option<TableMode> {
+    if REFLOW_DIRECTIVE_RE.is_match(html) {
+        Some(TableMode::Reflow)
+    } else if TRANSPOSE_DIRECTIVE_RE.is_match(html) {
+        Some(TableMode::Transpose)
+    } else {
+        None
+    }
+}
 
 /// A CSS length usable as a container-query breakpoint: a number plus a unit. The
 /// value ends up in a generated CSS rule (and, sanitized, in a class name), so it
@@ -281,16 +319,35 @@ fn record_reflow_breakpoint(bp: &str) {
     REFLOW_BREAKPOINTS.lock().unwrap().insert(bp.to_string());
 }
 
-/// The breakpoints recorded so far, for generating `reflow.css`.
+/// The breakpoints recorded so far, for the generated responsive-table stylesheet.
 pub fn reflow_breakpoints() -> BTreeSet<String> {
     REFLOW_BREAKPOINTS.lock().unwrap().clone()
 }
 
-/// Parse a `<!-- reflow: <length> -->` directive. Returns the breakpoint (the
-/// validated CSS length, or `None` when the value isn't a valid length) together
-/// with whether the comment was the entire HTML event (so it can be dropped).
-fn parse_reflow_directive(html: &str) -> Option<(Option<String>, bool)> {
-    let caps = REFLOW_DIRECTIVE_RE.captures(html)?;
+/// Transpose specs (`<!-- transpose: <length> -->` breakpoint paired with the
+/// table's column count) seen while rendering. The column count is baked into the
+/// generated CSS as a literal `grid-template-rows: repeat(<n>, auto)` — `repeat()`
+/// can't reliably take a custom property as its count — so it is recorded here
+/// alongside the breakpoint. Process-global for the same reasons as
+/// `REFLOW_BREAKPOINTS`.
+static TRANSPOSE_BREAKPOINTS: Lazy<Mutex<BTreeSet<(String, usize)>>> =
+    Lazy::new(|| Mutex::new(BTreeSet::new()));
+
+fn record_transpose_breakpoint(bp: &str, ncols: usize) {
+    TRANSPOSE_BREAKPOINTS.lock().unwrap().insert((bp.to_string(), ncols));
+}
+
+/// The transpose specs recorded so far, for the generated responsive-table stylesheet.
+pub fn transpose_breakpoints() -> BTreeSet<(String, usize)> {
+    TRANSPOSE_BREAKPOINTS.lock().unwrap().clone()
+}
+
+/// Parse a `<!-- reflow: … -->` / `<!-- transpose: … -->` directive with its
+/// matching `re`. Returns the breakpoint (the validated CSS length, or `None` when
+/// the value isn't a valid length) together with whether the comment was the entire
+/// HTML event (so it can be dropped).
+fn parse_directive(html: &str, re: &Regex) -> Option<(Option<String>, bool)> {
+    let caps = re.captures(html)?;
     let whole = caps.get(0).unwrap().as_str();
     let value = caps.get(1).unwrap().as_str();
     let standalone = html.trim() == whole;
@@ -299,7 +356,7 @@ fn parse_reflow_directive(html: &str) -> Option<(Option<String>, bool)> {
         Some((Some(value.to_ascii_lowercase()), standalone))
     } else {
         log::warn!(
-            "Ignoring table-reflow directive `{}`: `{}` is not a valid CSS length.",
+            "Ignoring responsive-table directive `{}`: `{}` is not a valid CSS length.",
             whole.trim(),
             value
         );
@@ -348,30 +405,35 @@ fn collect_headers(table: &[Event], ncols: usize) -> Vec<String> {
     headers
 }
 
-/// Wrap each *annotated* table and give its body cells a `data-label`. A table is
-/// reflowed only when a `<!-- reflow: <length> -->` directive immediately precedes
-/// it; every other table passes through untouched. `Table`/`TableHead`/`TableRow`
-/// stay structured (cmark renders `<table><thead><tr>`); only `TableCell`
-/// boundaries become raw HTML so we can add attributes cmark's renderer won't.
+/// Apply each per-table responsive directive to the table that *immediately*
+/// follows it; every other table passes through untouched. A `reflow` directive
+/// wraps the table and rewrites its cells (see `emit_reflow_table`); a `transpose`
+/// directive only wraps it (see `emit_transpose_table`). When both somehow precede
+/// one table the last one wins — they are mutually exclusive.
 fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
     if !events
         .iter()
-        .any(|e| matches!(e, Event::Html(html) if REFLOW_DIRECTIVE_RE.is_match(html)))
+        .any(|e| matches!(e, Event::Html(html) if directive_mode(html).is_some()))
     {
         return;
     }
 
     let old = std::mem::take(events);
     let mut out: Vec<Event> = Vec::with_capacity(old.len() + 16);
-    // The breakpoint of a pending `<!-- reflow: ... -->`, awaiting its table.
-    let mut pending: Option<String> = None;
+    // A pending directive (mode + breakpoint), awaiting its table.
+    let mut pending: Option<(TableMode, String)> = None;
     let mut it = old.into_iter();
 
     while let Some(ev) = it.next() {
         match ev {
-            Event::Html(ref html) if REFLOW_DIRECTIVE_RE.is_match(html) => {
-                if let Some((bp, standalone)) = parse_reflow_directive(html) {
-                    pending = bp;
+            Event::Html(ref html) if directive_mode(html).is_some() => {
+                let mode = directive_mode(html).expect("guard checked it is a directive");
+                let re = match mode {
+                    TableMode::Reflow => &*REFLOW_DIRECTIVE_RE,
+                    TableMode::Transpose => &*TRANSPOSE_DIRECTIVE_RE,
+                };
+                if let Some((bp, standalone)) = parse_directive(html, re) {
+                    pending = bp.map(|bp| (mode, bp));
                     // Keep the event only if it carried more than the directive.
                     if !standalone {
                         out.push(ev);
@@ -391,9 +453,14 @@ fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
                     }
                 }
                 match pending.take() {
-                    Some(bp) => {
+                    Some((TableMode::Reflow, bp)) => {
                         record_reflow_breakpoint(&bp);
                         emit_reflow_table(&mut out, aligns, table, &bp);
+                    }
+                    Some((TableMode::Transpose, bp)) => {
+                        let ncols = aligns.len().max(1);
+                        record_transpose_breakpoint(&bp, ncols);
+                        emit_transpose_table(&mut out, aligns, table, &bp, ncols);
                     }
                     None => {
                         out.push(Event::Start(Tag::Table(aligns)));
@@ -478,6 +545,29 @@ fn emit_reflow_table<'a>(
     out.push(Event::Html("</div>".into()));
 }
 
+/// Emit one transposed table: a
+/// `<div class="transpose transpose-bp-{token} transpose-cols-{ncols}">` wrapper
+/// around the *unchanged* table events. The flip is purely visual, done by the
+/// generated CSS container query (see `transpose_css`); the DOM and table semantics
+/// are untouched, so screen readers still read it column-wise. GFM tables are always
+/// rectangular (no colspan/rowspan), so `ncols` rows is exact. `table` holds the
+/// events after `Start(Table)` up to and including `End(Table)`.
+fn emit_transpose_table<'a>(
+    out: &mut Vec<Event<'a>>,
+    aligns: Vec<Alignment>,
+    table: Vec<Event<'a>>,
+    bp: &str,
+    ncols: usize,
+) {
+    let token = reflow_class_token(bp);
+    out.push(Event::Html(
+        format!(r#"<div class="transpose transpose-bp-{token} transpose-cols-{ncols}">"#).into(),
+    ));
+    out.push(Event::Start(Tag::Table(aligns)));
+    out.extend(table); // header + body events, native alignment styles intact
+    out.push(Event::Html("</div>".into()));
+}
+
 /// Map a validated breakpoint length to its CSS class / selector token. Lengths are
 /// `<number><unit>`; the only character invalid in a class name is the decimal
 /// point, which becomes `_` (so `37.5rem` -> `37_5rem`). Unambiguous because a
@@ -506,6 +596,33 @@ pub fn reflow_css(breakpoints: &BTreeSet<String>) -> String {
             "  .reflow-bp-{t} td {{ display: grid; grid-template-columns: auto 1fr; }}\n"
         ));
         css.push_str(&format!("  .reflow-bp-{t} td::before {{ content: attr(data-label); }}\n"));
+        css.push_str("}\n\n");
+    }
+    css
+}
+
+/// Generate the transpose rules for the responsive-table stylesheet: one container
+/// query per `(breakpoint, column-count)` used across the site. Below the
+/// breakpoint the table becomes a CSS grid laid out column-first, with
+/// `thead`/`tbody`/`tr` collapsed via `display: contents` so the cells flow into a
+/// `repeat(<ncols>, auto)` grid — which transposes them (the header row becomes the
+/// left column). The column count is keyed into the class so `repeat()` gets a
+/// literal count, never an unreliable `var()`. Authors style via the stable
+/// `.transpose` class.
+pub fn transpose_css(breakpoints: &BTreeSet<(String, usize)>) -> String {
+    let mut css = String::from(
+        "/* Table transpose — generated by zola-plus from `<!-- transpose: <length> -->` annotations.\n   Visual transpose only; the DOM/table semantics are unchanged. Style via the `.transpose` class. */\n\n",
+    );
+    for (bp, ncols) in breakpoints {
+        let t = reflow_class_token(bp);
+        css.push_str(&format!(".transpose-bp-{t} {{ container-type: inline-size; }}\n"));
+        css.push_str(&format!("@container (max-width: {bp}) {{\n"));
+        css.push_str(&format!(
+            "  .transpose-bp-{t}.transpose-cols-{ncols} table {{ display: grid; grid-auto-flow: column; grid-template-rows: repeat({ncols}, auto); }}\n"
+        ));
+        css.push_str(&format!(
+            "  .transpose-bp-{t} thead,\n  .transpose-bp-{t} tbody,\n  .transpose-bp-{t} tr {{ display: contents; }}\n"
+        ));
         css.push_str("}\n\n");
     }
     css
@@ -1495,5 +1612,144 @@ mod tests {
             "got:\n{css}"
         );
         assert!(css.contains("@container (max-width: 37.5rem) {"), "got:\n{css}");
+    }
+
+    fn render_transpose(content: &str) -> String {
+        // Same pipeline as `render_reflow`; `transform_tables` handles both modes.
+        let mut opts = Options::empty();
+        opts.insert(Options::ENABLE_TABLES);
+        opts.insert(Options::ENABLE_STRIKETHROUGH);
+        opts.insert(Options::ENABLE_TASKLISTS);
+        opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+        let mut events: Vec<_> = Parser::new_ext(content, opts).collect();
+        transform_tables(&mut events);
+        let mut html = String::new();
+        cmark::html::push_html(&mut html, events.into_iter());
+        html
+    }
+
+    #[test]
+    fn transpose_basic() {
+        // Annotated table: the wrapper carries the breakpoint and column-count
+        // classes; the table itself is re-emitted unchanged (no per-cell rewriting).
+        let content =
+            "<!-- transpose: 40rem -->\n\n| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
+        assert_snapshot!(render_transpose(content));
+    }
+
+    #[test]
+    fn transpose_alignment() {
+        // Column alignment is left to cmark's native cell rendering — transpose does
+        // not touch cells — so the alignment styles pass straight through.
+        let content = "<!-- transpose: 30rem -->\n\n| L | C | R |\n|:--|:-:|--:|\n| a | b | c |";
+        assert_snapshot!(render_transpose(content));
+    }
+
+    #[test]
+    fn transpose_inline_markup() {
+        // Cells keep their inline markup; transpose adds no data-label.
+        let content =
+            "<!-- transpose: 30rem -->\n\n| **Bold head** | `code` |\n| --- | --- |\n| _em_ | [x](https://example.com) |";
+        assert_snapshot!(render_transpose(content));
+    }
+
+    #[test]
+    fn transpose_unannotated_table_is_plain() {
+        // No directive => the table is left completely untouched.
+        let content = "| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_transpose(content);
+        assert!(
+            !html.contains("class=\"transpose") && !html.contains("<style"),
+            "unannotated table must stay a plain table, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn transpose_no_table_is_noop() {
+        let content = "Just a paragraph, no table here.";
+        assert_snapshot!(render_transpose(content));
+    }
+
+    #[test]
+    fn transpose_directive_does_not_leak_past_content() {
+        // A directive applies only to the table that immediately follows it.
+        let content =
+            "<!-- transpose: 40rem -->\n\nA paragraph in between.\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_transpose(content);
+        assert!(
+            !html.contains("class=\"transpose"),
+            "table after intervening content must stay plain, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn transpose_invalid_length_is_plain() {
+        // A non-length value is rejected: the table renders plain.
+        let content = "<!-- transpose: huge -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_transpose(content);
+        assert!(
+            !html.contains("class=\"transpose") && !html.contains("<style"),
+            "invalid breakpoint must leave the table plain, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn transpose_class_encodes_breakpoint_and_column_count() {
+        // The breakpoint and column count both become wrapper classes; a decimal
+        // point is sanitized to `_` (`37.5rem` -> `transpose-bp-37_5rem`). No CSS or
+        // custom property is inlined — the column count drives a literal `repeat()`
+        // in the generated stylesheet instead.
+        let content = "<!-- transpose: 37.5rem -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_transpose(content);
+        assert!(
+            html.contains(r#"<div class="transpose transpose-bp-37_5rem transpose-cols-2">"#),
+            "breakpoint and column count must drive the wrapper classes, got:\n{html}"
+        );
+        assert!(
+            !html.contains("<style") && !html.contains("--transpose"),
+            "no CSS or custom property should be inlined, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn transpose_single_column_table() {
+        // A one-column table records `transpose-cols-1`.
+        let content = "<!-- transpose: 30rem -->\n\n| Only |\n| ---- |\n| a |";
+        let html = render_transpose(content);
+        assert!(
+            html.contains(r#"transpose-cols-1">"#),
+            "single-column table must record cols-1, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn transpose_and_reflow_are_mutually_exclusive() {
+        // When both directives precede one table, the last one wins (here transpose);
+        // the table is never wrapped as both.
+        let content =
+            "<!-- reflow: 40rem -->\n\n<!-- transpose: 30rem -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_transpose(content);
+        assert!(
+            html.contains("class=\"transpose") && !html.contains("class=\"reflow"),
+            "the last directive must win, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn transpose_css_emits_one_container_query_per_spec() {
+        let mut set = std::collections::BTreeSet::new();
+        set.insert(("40rem".to_string(), 2usize));
+        set.insert(("30rem".to_string(), 3usize));
+        let css = transpose_css(&set);
+        assert!(css.contains(".transpose-bp-40rem { container-type: inline-size; }"), "got:\n{css}");
+        assert!(css.contains("@container (max-width: 40rem) {"), "got:\n{css}");
+        // The column count is a literal in `repeat()`, never a `var()`.
+        assert!(
+            css.contains("grid-template-rows: repeat(2, auto);")
+                && css.contains("grid-template-rows: repeat(3, auto);"),
+            "got:\n{css}"
+        );
+        assert!(!css.contains("var("), "repeat() must use a literal count, got:\n{css}");
+        assert!(css.contains(".transpose-bp-30rem tr { display: contents; }"), "got:\n{css}");
     }
 }

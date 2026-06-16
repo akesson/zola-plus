@@ -1,0 +1,8 @@
+---
+source: components/markdown/src/markdown.rs
+expression: render_transpose(content)
+---
+<div class="transpose transpose-bp-30rem transpose-cols-2"><table><thead><tr><th><strong>Bold head</strong></th><th><code>code</code></th></tr></thead><tbody>
+<tr><td><em>em</em></td><td><a href="https://example.com">x</a></td></tr>
+</tbody></table>
+</div>

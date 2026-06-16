@@ -235,7 +235,7 @@ fn can_build_site_without_live_reload() {
 }
 
 #[test]
-fn can_generate_reflow_css_for_annotated_tables() {
+fn can_generate_responsive_tables_css_for_annotated_tables() {
     let (_, _tmp_dir, public) = build_site("test_site");
 
     // A table annotated with `<!-- reflow: 40rem -->` is wrapped with the
@@ -245,13 +245,26 @@ fn can_generate_reflow_css_for_annotated_tables() {
     assert!(file_contains!(public, "root-page-1/index.html", "data-label=\"Name\""));
     assert!(!file_contains!(public, "root-page-1/index.html", "<style>.reflow"));
 
-    // The matching container query ships once in a generated reflow.css.
-    assert!(file_exists!(public, "reflow.css"));
-    assert!(file_contains!(public, "reflow.css", "@container (max-width: 40rem)"));
+    // A `<!-- transpose: 40rem -->` table is wrapped with the breakpoint and
+    // column-count classes; its cells are left untouched (no data-label).
     assert!(file_contains!(
         public,
-        "reflow.css",
+        "root-page-1/index.html",
+        "class=\"transpose transpose-bp-40rem transpose-cols-2\""
+    ));
+
+    // Both features' container queries ship once in a single responsive-tables.css.
+    assert!(file_exists!(public, "responsive-tables.css"));
+    assert!(file_contains!(public, "responsive-tables.css", "@container (max-width: 40rem)"));
+    assert!(file_contains!(
+        public,
+        "responsive-tables.css",
         ".reflow-bp-40rem td::before { content: attr(data-label); }"
+    ));
+    assert!(file_contains!(
+        public,
+        "responsive-tables.css",
+        "grid-template-rows: repeat(2, auto);"
     ));
 }
 

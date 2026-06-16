@@ -792,8 +792,8 @@ impl Site {
         }
         self.render_themes_css()?;
         start = log_time(start, "Rendered themes css");
-        self.render_reflow_css()?;
-        start = log_time(start, "Rendered reflow css");
+        self.render_responsive_tables_css()?;
+        start = log_time(start, "Rendered responsive-tables css");
         self.render_404()?;
         start = log_time(start, "Rendered 404");
         if self.config.generate_robots_txt {
@@ -835,16 +835,25 @@ impl Site {
         Ok(())
     }
 
-    /// Write `reflow.css` for every breakpoint used by a `<!-- reflow: ... -->`
-    /// table across the site (collected during markdown rendering). Skipped when
-    /// the feature is unused. The site links it once, like the highlighting CSS.
-    pub fn render_reflow_css(&self) -> Result<()> {
-        let breakpoints = markdown::reflow_breakpoints();
-        if breakpoints.is_empty() {
+    /// Write a single `responsive-tables.css` combining every `reflow` and
+    /// `transpose` breakpoint used across the site (collected during markdown
+    /// rendering). Skipped when neither feature is used. The site links it once,
+    /// like the highlighting CSS.
+    pub fn render_responsive_tables_css(&self) -> Result<()> {
+        let reflow = markdown::reflow_breakpoints();
+        let transpose = markdown::transpose_breakpoints();
+        if reflow.is_empty() && transpose.is_empty() {
             return Ok(());
         }
+        let mut css = String::new();
+        if !reflow.is_empty() {
+            css.push_str(&markdown::reflow_css(&reflow));
+        }
+        if !transpose.is_empty() {
+            css.push_str(&markdown::transpose_css(&transpose));
+        }
         create_directory(&self.output_path)?;
-        create_file(&self.output_path.join("reflow.css"), markdown::reflow_css(&breakpoints))?;
+        create_file(&self.output_path.join("responsive-tables.css"), css)?;
         Ok(())
     }
 
