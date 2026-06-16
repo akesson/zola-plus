@@ -2631,7 +2631,6 @@ dependencies = [
  "regex",
  "templates",
  "tera",
- "unicode-width",
  "utils",
 ]
 
@@ -4711,6 +4710,7 @@ dependencies = [
  "imageproc",
  "link_checker",
  "log",
+ "markdown",
  "minify-html",
  "once_cell",
  "path-slash",

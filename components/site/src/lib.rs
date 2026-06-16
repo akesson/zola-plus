@@ -792,6 +792,8 @@ impl Site {
         }
         self.render_themes_css()?;
         start = log_time(start, "Rendered themes css");
+        self.render_reflow_css()?;
+        start = log_time(start, "Rendered reflow css");
         self.render_404()?;
         start = log_time(start, "Rendered 404");
         if self.config.generate_robots_txt {
@@ -830,6 +832,19 @@ impl Site {
             }
         }
 
+        Ok(())
+    }
+
+    /// Write `reflow.css` for every breakpoint used by a `<!-- reflow: ... -->`
+    /// table across the site (collected during markdown rendering). Skipped when
+    /// the feature is unused. The site links it once, like the highlighting CSS.
+    pub fn render_reflow_css(&self) -> Result<()> {
+        let breakpoints = markdown::reflow_breakpoints();
+        if breakpoints.is_empty() {
+            return Ok(());
+        }
+        create_directory(&self.output_path)?;
+        create_file(&self.output_path.join("reflow.css"), markdown::reflow_css(&breakpoints))?;
         Ok(())
     }
 

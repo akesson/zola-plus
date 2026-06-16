@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::Write;
+use std::sync::Mutex;
 
 use crate::markdown::cmark::CowStr;
 use errors::bail;
@@ -22,7 +23,6 @@ use utils::types::InsertAnchor;
 
 use self::cmark::{Alignment, Event, LinkType, Options, Parser, Tag, TagEnd};
 use crate::shortcode::{SHORTCODE_PLACEHOLDER, Shortcode};
-use unicode_width::UnicodeWidthStr;
 
 const CONTINUE_READING: &str = "<span id=\"continue-reading\"></span>";
 const SUMMARY_CUTOFF_TEMPLATE: &str = "summary-cutoff.html";
@@ -225,86 +225,89 @@ fn get_text(parser_slice: &[Event]) -> String {
     title
 }
 
-// --- Responsive tables -------------------------------------------------------
+// --- Table reflow ------------------------------------------------------------
 //
-// When `markdown.responsive_tables` is on, each markdown table is wrapped in a
-// `<div class="rt rt--cards rt--bp-N" style="--rt-label:Mch">` and every body
-// `<td>` gets a `data-label` of its column header. The accompanying CSS uses a
-// container query (`@container (max-width: Nch)`) to reflow the table into cards
-// on narrow containers. This is the build-time, JS-free equivalent of injecting
-// header labels at runtime. The breakpoint `N` is estimated from the table's
-// content (in `ch`), the long-header width `M` lets the CSS size the label
-// column. See docs/content/documentation/content/tables.md.
+// A markdown table reflows into "cards" on narrow containers when it carries a
+// `<!-- reflow: <length> -->` directive on its own line directly above it (with a
+// blank line in between). For such a table we wrap it in
+// `<div class="reflow reflow-bp-<token>">`, give every body `<td>` a `data-label`
+// of its column header, and add `scope="col"` to the headers.
+//
+// The breakpoint lives in the class (`reflow-bp-65rem`), not in the markup's CSS.
+// Each distinct breakpoint used across the site gets one container query in a
+// generated `reflow.css` (see `reflow_css`), which the site links once — exactly
+// how class-based syntax highlighting ships `giallo.css`. (A container query can't
+// read a custom property in its condition, so the value must live in a rule keyed
+// by class.) The generated CSS does *reflow only* (no margins/colours/fonts); the
+// stable `.reflow` class is the author's hook for any cosmetic styling.
+//
+// A table without the directive is left completely untouched. See
+// docs/content/documentation/content/tables.md.
 
-/// One verbose cell shouldn't push the breakpoint to "always cards": cap each
-/// column's measured width (in `ch`) since long text wraps anyway.
-const RT_CELL_CAP: usize = 24;
-/// Per-column padding/border slack added to the width estimate (in `ch`).
-const RT_PAD_CH: usize = 4;
-/// The estimate measures content in `ch` (the width of `0`), but real glyphs are
-/// often wider — capitals like `W`/`M` are ~1.5x `0`. Scale the content sum up so
-/// wide-glyph tables still card *before* their content overflows the breakpoint.
-/// Errs toward carding slightly early, which is the safe direction. Kept modest:
-/// a larger factor mostly inflates wide multi-column tables (which already get
-/// generous slack from `ch` over-counting normal text) without rescuing the
-/// pathological all-caps case, whose deficit is bounded by the ladder snap anyway.
-const RT_WIDTH_SCALE_PCT: usize = 115;
-/// Breakpoint ladder, in `ch`. MUST match the SCSS `@for` ladder shipped for the
-/// feature (docs/sass/_responsive-tables.scss).
-const RT_BP_MIN: u32 = 16;
-const RT_BP_MAX: u32 = 160;
-const RT_BP_STEP: u32 = 4;
-
-/// Matches a per-table `<!-- rt: ... -->` directive comment.
-static RT_DIRECTIVE_RE: Lazy<Regex> = Lazy::new(|| {
-    RegexBuilder::new(r#"<!--\s*rt:\s*(.*?)\s*-->"#)
+/// Matches a per-table `<!-- reflow: <length> -->` directive comment.
+static REFLOW_DIRECTIVE_RE: Lazy<Regex> = Lazy::new(|| {
+    RegexBuilder::new(r#"<!--\s*reflow:\s*(.*?)\s*-->"#)
         .case_insensitive(true)
         .dot_matches_new_line(true)
         .build()
         .unwrap()
 });
 
-/// Per-table overrides parsed from a `<!-- rt: ... -->` directive.
-#[derive(Default, Clone)]
-struct TableDirective {
-    /// Render a plain table (skip the responsive wrapper entirely).
-    off: bool,
-    /// Force the breakpoint (in `ch`) instead of estimating it.
-    bp: Option<u32>,
+/// A CSS length usable as a container-query breakpoint: a number plus a unit. The
+/// value ends up in a generated CSS rule (and, sanitized, in a class name), so it
+/// is validated against this allowlist to keep a stray annotation from injecting
+/// CSS or producing an invalid class.
+static REFLOW_LENGTH_RE: Lazy<Regex> = Lazy::new(|| {
+    RegexBuilder::new(r"^\d+(\.\d+)?(px|rem|em|ch|ex|vw|vh|vmin|vmax|cqw|cqh|cqi|cqb)$")
+        .case_insensitive(true)
+        .build()
+        .unwrap()
+});
+
+fn is_valid_css_length(value: &str) -> bool {
+    REFLOW_LENGTH_RE.is_match(value)
 }
 
-/// Parse a directive comment. Returns the overrides plus whether the comment was
-/// the entire HTML event (so it can be dropped from the output).
-fn parse_table_directive(html: &str) -> Option<(TableDirective, bool)> {
-    let caps = RT_DIRECTIVE_RE.captures(html)?;
+/// Breakpoints (`<!-- reflow: <length> -->` values) seen while rendering. The site
+/// build reads this afterwards to generate one shared `reflow.css`, mirroring how
+/// class-based highlighting ships `giallo.css`. It is a process-global set rather
+/// than threaded state because rendering runs in parallel across pages and the
+/// rendering API is shared with `zola serve`; the set only ever grows, so even
+/// incremental rebuilds keep a complete superset (at worst a stale, unused rule).
+static REFLOW_BREAKPOINTS: Lazy<Mutex<BTreeSet<String>>> =
+    Lazy::new(|| Mutex::new(BTreeSet::new()));
+
+fn record_reflow_breakpoint(bp: &str) {
+    REFLOW_BREAKPOINTS.lock().unwrap().insert(bp.to_string());
+}
+
+/// The breakpoints recorded so far, for generating `reflow.css`.
+pub fn reflow_breakpoints() -> BTreeSet<String> {
+    REFLOW_BREAKPOINTS.lock().unwrap().clone()
+}
+
+/// Parse a `<!-- reflow: <length> -->` directive. Returns the breakpoint (the
+/// validated CSS length, or `None` when the value isn't a valid length) together
+/// with whether the comment was the entire HTML event (so it can be dropped).
+fn parse_reflow_directive(html: &str) -> Option<(Option<String>, bool)> {
+    let caps = REFLOW_DIRECTIVE_RE.captures(html)?;
     let whole = caps.get(0).unwrap().as_str();
-    let args = caps.get(1).unwrap().as_str();
-    let mut dir = TableDirective::default();
-    for tok in args.split_whitespace() {
-        let tok = tok.to_ascii_lowercase();
-        if tok == "off" || tok == "none" {
-            dir.off = true;
-        } else if let Some(v) = tok.strip_prefix("bp=") {
-            if v == "auto" {
-                dir.bp = None;
-            } else {
-                let digits: String = v.chars().take_while(|c| c.is_ascii_digit()).collect();
-                if let Ok(n) = digits.parse::<u32>() {
-                    dir.bp = Some(n);
-                }
-            }
-        }
-        // Unknown tokens are ignored for forward compatibility.
+    let value = caps.get(1).unwrap().as_str();
+    let standalone = html.trim() == whole;
+    if is_valid_css_length(value) {
+        // Normalize case so `40REM` and `40rem` share one class and one CSS rule.
+        Some((Some(value.to_ascii_lowercase()), standalone))
+    } else {
+        log::warn!(
+            "Ignoring table-reflow directive `{}`: `{}` is not a valid CSS length.",
+            whole.trim(),
+            value
+        );
+        Some((None, standalone))
     }
-    Some((dir, html.trim() == whole))
 }
 
-/// Clamp to the ladder range and snap up to the next rung.
-fn rt_snap_breakpoint(n: u32) -> u32 {
-    n.clamp(RT_BP_MIN, RT_BP_MAX).div_ceil(RT_BP_STEP) * RT_BP_STEP
-}
-
-fn rt_align_attr(align: Alignment) -> &'static str {
+fn reflow_align_attr(align: Alignment) -> &'static str {
     match align {
         Alignment::Left => " style=\"text-align: left\"",
         Alignment::Center => " style=\"text-align: center\"",
@@ -313,25 +316,62 @@ fn rt_align_attr(align: Alignment) -> &'static str {
     }
 }
 
-/// Rewrite table events in place so each table is wrapped and its body cells carry
-/// a `data-label`. `Table`/`TableHead`/`TableRow` stay structured (cmark renders
-/// `<table><thead><tr>`); only `TableCell` boundaries become raw HTML so we can add
-/// attributes cmark's renderer won't.
+/// Per-column header text, used for the `data-label` on body cells.
+fn collect_headers(table: &[Event], ncols: usize) -> Vec<String> {
+    let mut headers = vec![String::new(); ncols];
+    let mut in_head = false;
+    let mut col = 0usize;
+    let mut j = 0;
+    while j < table.len() {
+        match &table[j] {
+            Event::Start(Tag::TableHead) => {
+                in_head = true;
+                col = 0;
+            }
+            Event::End(TagEnd::TableHead) => in_head = false,
+            Event::Start(Tag::TableRow) => col = 0,
+            Event::Start(Tag::TableCell) => {
+                let mut k = j + 1;
+                while k < table.len() && !matches!(table[k], Event::End(TagEnd::TableCell)) {
+                    k += 1;
+                }
+                if in_head && col < ncols {
+                    headers[col] = get_text(&table[j + 1..k]);
+                }
+                col += 1;
+                j = k; // continue from the End(TableCell)
+            }
+            _ => {}
+        }
+        j += 1;
+    }
+    headers
+}
+
+/// Wrap each *annotated* table and give its body cells a `data-label`. A table is
+/// reflowed only when a `<!-- reflow: <length> -->` directive immediately precedes
+/// it; every other table passes through untouched. `Table`/`TableHead`/`TableRow`
+/// stay structured (cmark renders `<table><thead><tr>`); only `TableCell`
+/// boundaries become raw HTML so we can add attributes cmark's renderer won't.
 fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
-    if !events.iter().any(|e| matches!(e, Event::Start(Tag::Table(_)))) {
+    if !events
+        .iter()
+        .any(|e| matches!(e, Event::Html(html) if REFLOW_DIRECTIVE_RE.is_match(html)))
+    {
         return;
     }
 
     let old = std::mem::take(events);
     let mut out: Vec<Event> = Vec::with_capacity(old.len() + 16);
-    let mut pending = TableDirective::default();
+    // The breakpoint of a pending `<!-- reflow: ... -->`, awaiting its table.
+    let mut pending: Option<String> = None;
     let mut it = old.into_iter();
 
     while let Some(ev) = it.next() {
         match ev {
-            Event::Html(ref html) if RT_DIRECTIVE_RE.is_match(html) => {
-                if let Some((dir, standalone)) = parse_table_directive(html) {
-                    pending = dir;
+            Event::Html(ref html) if REFLOW_DIRECTIVE_RE.is_match(html) => {
+                if let Some((bp, standalone)) = parse_reflow_directive(html) {
+                    pending = bp;
                     // Keep the event only if it carried more than the directive.
                     if !standalone {
                         out.push(ev);
@@ -350,8 +390,16 @@ fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
                         break;
                     }
                 }
-                let directive = std::mem::take(&mut pending);
-                emit_table(&mut out, aligns, table, directive);
+                match pending.take() {
+                    Some(bp) => {
+                        record_reflow_breakpoint(&bp);
+                        emit_reflow_table(&mut out, aligns, table, &bp);
+                    }
+                    None => {
+                        out.push(Event::Start(Tag::Table(aligns)));
+                        out.extend(table);
+                    }
+                }
             }
             other => {
                 // A directive applies only to a table that *immediately* follows it.
@@ -361,7 +409,7 @@ fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
                 // misplaced — or its table was since removed — so drop it rather than
                 // let it silently attach to an unrelated table further down the page.
                 if !matches!(other, Event::Start(Tag::HtmlBlock) | Event::End(TagEnd::HtmlBlock)) {
-                    pending = TableDirective::default();
+                    pending = None;
                 }
                 out.push(other);
             }
@@ -371,75 +419,25 @@ fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
     *events = out;
 }
 
-/// Emit one table: either unchanged (directive `off`) or wrapped with `data-label`s.
-/// `table` holds the events after `Start(Table)` up to and including `End(Table)`.
-fn emit_table<'a>(
+/// Emit one reflowed table: a `<div class="reflow reflow-bp-{token}">` wrapper and
+/// the table with `scope="col"` headers and `data-label` body cells. The matching
+/// container query is shipped once in the generated `reflow.css` (see `reflow_css`);
+/// nothing is inlined here. `table` holds the events after `Start(Table)` up to and
+/// including `End(Table)`.
+fn emit_reflow_table<'a>(
     out: &mut Vec<Event<'a>>,
     aligns: Vec<Alignment>,
     table: Vec<Event<'a>>,
-    directive: TableDirective,
+    bp: &str,
 ) {
-    if directive.off {
-        out.push(Event::Start(Tag::Table(aligns)));
-        out.extend(table);
-        return;
-    }
-
     let ncols = aligns.len().max(1);
+    let headers = collect_headers(&table, ncols);
+    let token = reflow_class_token(bp);
 
-    // Pass 1: per-column header text + max display width (incl. header rows).
-    let mut headers: Vec<String> = vec![String::new(); ncols];
-    let mut col_width: Vec<usize> = vec![0; ncols];
-    let mut max_label = 0usize;
-    {
-        let mut in_head = false;
-        let mut col = 0usize;
-        let mut j = 0;
-        while j < table.len() {
-            match &table[j] {
-                Event::Start(Tag::TableHead) => {
-                    in_head = true;
-                    col = 0;
-                }
-                Event::End(TagEnd::TableHead) => in_head = false,
-                Event::Start(Tag::TableRow) => col = 0,
-                Event::Start(Tag::TableCell) => {
-                    let mut k = j + 1;
-                    while k < table.len()
-                        && !matches!(table[k], Event::End(TagEnd::TableCell))
-                    {
-                        k += 1;
-                    }
-                    let text = get_text(&table[j + 1..k]);
-                    let width = UnicodeWidthStr::width(text.as_str());
-                    if col < ncols {
-                        col_width[col] = col_width[col].max(width.min(RT_CELL_CAP));
-                        if in_head {
-                            headers[col] = text;
-                            // Cap so one long header can't create an over-wide label column.
-                            max_label = max_label.max(width.min(RT_CELL_CAP));
-                        }
-                    }
-                    col += 1;
-                    j = k; // continue from the End(TableCell)
-                }
-                _ => {}
-            }
-            j += 1;
-        }
-    }
-
-    let content = col_width.iter().sum::<usize>() * RT_WIDTH_SCALE_PCT / 100;
-    let estimate = (content + RT_PAD_CH * ncols) as u32;
-    let bp = rt_snap_breakpoint(directive.bp.unwrap_or(estimate));
-    let label_ch = max_label.max(1);
-
-    out.push(Event::Html(
-        format!(r#"<div class="rt rt--cards rt--bp-{bp}" style="--rt-label:{label_ch}ch">"#).into(),
-    ));
+    out.push(Event::Html(format!(r#"<div class="reflow reflow-bp-{token}">"#).into()));
     out.push(Event::Start(Tag::Table(aligns.clone())));
 
-    // Pass 2: re-emit, replacing cell boundaries with attribute-carrying raw HTML.
+    // Re-emit, replacing cell boundaries with attribute-carrying raw HTML.
     let mut in_head = false;
     let mut col = 0usize;
     for ev in table {
@@ -459,7 +457,7 @@ fn emit_table<'a>(
             }
             Event::Start(Tag::TableCell) => {
                 let align = aligns.get(col).copied().unwrap_or(Alignment::None);
-                let align_attr = rt_align_attr(align);
+                let align_attr = reflow_align_attr(align);
                 let tag = if in_head {
                     format!("<th{align_attr} scope=\"col\">")
                 } else {
@@ -478,6 +476,39 @@ fn emit_table<'a>(
         }
     }
     out.push(Event::Html("</div>".into()));
+}
+
+/// Map a validated breakpoint length to its CSS class / selector token. Lengths are
+/// `<number><unit>`; the only character invalid in a class name is the decimal
+/// point, which becomes `_` (so `37.5rem` -> `37_5rem`). Unambiguous because a
+/// length never otherwise contains `_`.
+fn reflow_class_token(bp: &str) -> String {
+    bp.replace('.', "_")
+}
+
+/// Generate the shared `reflow.css` for the breakpoints used across the site: one
+/// container query per breakpoint, with reflow-only rules keyed by the matching
+/// `reflow-bp-<token>` class. Authors style the cards themselves via the stable
+/// `.reflow` class. Mirrors how class-based highlighting ships `giallo.css`.
+pub fn reflow_css(breakpoints: &BTreeSet<String>) -> String {
+    let mut css = String::from(
+        "/* Table reflow — generated by zola-plus from `<!-- reflow: <length> -->` annotations.\n   Reflow-only rules; style the cards yourself via the `.reflow` class. */\n\n",
+    );
+    for bp in breakpoints {
+        let t = reflow_class_token(bp);
+        css.push_str(&format!(".reflow-bp-{t} {{ container-type: inline-size; }}\n"));
+        css.push_str(&format!("@container (max-width: {bp}) {{\n"));
+        css.push_str(&format!(
+            "  .reflow-bp-{t} thead {{ position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }}\n"
+        ));
+        css.push_str(&format!("  .reflow-bp-{t} tr {{ display: block; }}\n"));
+        css.push_str(&format!(
+            "  .reflow-bp-{t} td {{ display: grid; grid-template-columns: auto 1fr; }}\n"
+        ));
+        css.push_str(&format!("  .reflow-bp-{t} td::before {{ content: attr(data-label); }}\n"));
+        css.push_str("}\n\n");
+    }
+    css
 }
 
 fn get_heading_refs(events: &[Event]) -> Vec<HeadingRef> {
@@ -1089,9 +1120,8 @@ pub fn markdown_to_html(
             convert_footnotes_to_github_style(&mut events);
         }
 
-        if context.config.markdown.responsive_tables {
-            transform_tables(&mut events);
-        }
+        // A no-op unless a table carries a `<!-- reflow: ... -->` directive.
+        transform_tables(&mut events);
 
         let continue_reading = events
             .iter()
@@ -1345,7 +1375,7 @@ mod tests {
         assert_snapshot!(html);
     }
 
-    fn render_responsive_table(content: &str) -> String {
+    fn render_reflow(content: &str) -> String {
         let mut opts = Options::empty();
         opts.insert(Options::ENABLE_TABLES);
         opts.insert(Options::ENABLE_STRIKETHROUGH);
@@ -1359,70 +1389,111 @@ mod tests {
     }
 
     #[test]
-    fn responsive_table_basic() {
-        // Wrapper + per-cell data-label + estimated bp + --rt-label from longest header.
+    fn reflow_basic() {
+        // Annotated table: scoped <style> at the chosen breakpoint, the wrapper, and
+        // a data-label of its column header on every body cell.
         let content =
-            "| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
-        assert_snapshot!(render_responsive_table(content));
+            "<!-- reflow: 40rem -->\n\n| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
+        assert_snapshot!(render_reflow(content));
     }
 
     #[test]
-    fn responsive_table_alignment() {
+    fn reflow_alignment() {
         // Column alignment is replicated onto the raw <th>/<td>.
-        let content = "| L | C | R |\n|:--|:-:|--:|\n| a | b | c |";
-        assert_snapshot!(render_responsive_table(content));
+        let content = "<!-- reflow: 30rem -->\n\n| L | C | R |\n|:--|:-:|--:|\n| a | b | c |";
+        assert_snapshot!(render_reflow(content));
     }
 
     #[test]
-    fn responsive_table_inline_markup() {
+    fn reflow_inline_markup() {
         // Cells keep inline markup; data-label uses the header's plain text only.
         let content =
-            "| **Bold head** | `code` |\n| --- | --- |\n| _em_ | [x](https://example.com) |";
-        assert_snapshot!(render_responsive_table(content));
+            "<!-- reflow: 30rem -->\n\n| **Bold head** | `code` |\n| --- | --- |\n| _em_ | [x](https://example.com) |";
+        assert_snapshot!(render_reflow(content));
     }
 
     #[test]
-    fn responsive_table_bp_override() {
-        let content = "<!-- rt: bp=80 -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
-        assert_snapshot!(render_responsive_table(content));
-    }
-
-    #[test]
-    fn responsive_table_off_directive() {
-        // `off` emits a plain table with no wrapper and no data-label.
-        let content = "<!-- rt: off -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
-        assert_snapshot!(render_responsive_table(content));
-    }
-
-    #[test]
-    fn responsive_table_no_table_is_noop() {
-        let content = "Just a paragraph, no table here.";
-        assert_snapshot!(render_responsive_table(content));
-    }
-
-    #[test]
-    fn responsive_table_directive_does_not_leak_past_content() {
-        // A directive applies only to the table that immediately follows it. With
-        // unrelated content in between, the directive is dropped, so a stray `off`
-        // can't silently turn a later, unrelated table into a plain one.
-        let content =
-            "<!-- rt: off -->\n\nA paragraph in between.\n\n| A | B |\n| - | - |\n| 1 | 2 |";
-        let html = render_responsive_table(content);
+    fn reflow_unannotated_table_is_plain() {
+        // No directive => the table is left completely untouched.
+        let content = "| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_reflow(content);
         assert!(
-            html.contains(r#"<div class="rt rt--cards"#),
-            "table after intervening content must stay responsive, got:\n{html}"
+            !html.contains("class=\"reflow") && !html.contains("data-label") && !html.contains("<style"),
+            "unannotated table must stay a plain table, got:\n{html}"
         );
     }
 
     #[test]
-    fn responsive_table_escapes_header_in_data_label() {
+    fn reflow_no_table_is_noop() {
+        let content = "Just a paragraph, no table here.";
+        assert_snapshot!(render_reflow(content));
+    }
+
+    #[test]
+    fn reflow_directive_does_not_leak_past_content() {
+        // A directive applies only to the table that immediately follows it. With
+        // unrelated content in between, the directive is dropped, so the later table
+        // stays plain rather than picking up a breakpoint meant for nothing.
+        let content =
+            "<!-- reflow: 40rem -->\n\nA paragraph in between.\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_reflow(content);
+        assert!(
+            !html.contains("class=\"reflow"),
+            "table after intervening content must stay plain, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn reflow_invalid_length_is_plain() {
+        // A non-length value is rejected: the table renders plain rather than
+        // emitting a broken container query.
+        let content = "<!-- reflow: huge -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_reflow(content);
+        assert!(
+            !html.contains("class=\"reflow") && !html.contains("<style"),
+            "invalid breakpoint must leave the table plain, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn reflow_escapes_header_in_data_label() {
         // Header text flows into a double-quoted `data-label`; quotes, ampersands and
         // angle brackets must be escaped or a header could break out of the attribute.
-        let content = "| Tom & \"Jerry\" |\n| --- |\n| x |";
-        let html = render_responsive_table(content);
+        let content = "<!-- reflow: 30rem -->\n\n| Tom & \"Jerry\" |\n| --- |\n| x |";
+        let html = render_reflow(content);
         assert!(
             html.contains(r#"data-label="Tom &amp; &quot;Jerry&quot;""#),
             "header must be attribute-escaped in data-label, got:\n{html}"
         );
+    }
+
+    #[test]
+    fn reflow_class_encodes_breakpoint_value() {
+        // The breakpoint becomes the wrapper class; a decimal point is sanitized to
+        // `_` so the class stays valid (`37.5rem` -> `reflow-bp-37_5rem`). No CSS is
+        // inlined — it ships in the generated reflow.css.
+        let content = "<!-- reflow: 37.5rem -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_reflow(content);
+        assert!(
+            html.contains(r#"<div class="reflow reflow-bp-37_5rem">"#),
+            "breakpoint must drive the wrapper class, got:\n{html}"
+        );
+        assert!(!html.contains("<style"), "no CSS should be inlined, got:\n{html}");
+    }
+
+    #[test]
+    fn reflow_css_emits_one_container_query_per_breakpoint() {
+        let mut set = std::collections::BTreeSet::new();
+        set.insert("40rem".to_string());
+        set.insert("37.5rem".to_string());
+        let css = reflow_css(&set);
+        // The selector token sanitizes the dot; the query keeps the real length.
+        assert!(css.contains(".reflow-bp-40rem { container-type: inline-size; }"), "got:\n{css}");
+        assert!(css.contains("@container (max-width: 40rem) {"), "got:\n{css}");
+        assert!(
+            css.contains(".reflow-bp-37_5rem td::before { content: attr(data-label); }"),
+            "got:\n{css}"
+        );
+        assert!(css.contains("@container (max-width: 37.5rem) {"), "got:\n{css}");
     }
 }

@@ -485,34 +485,35 @@ fn github_alerts() {
 }
 
 #[test]
-fn can_render_responsive_tables() {
-    let mut config = Config::default_for_test();
-    config.markdown.responsive_tables = true;
-    let markdown = r#"A regular table becomes responsive:
+fn can_render_table_reflow() {
+    // A table reflows only when it carries a `<!-- reflow: <length> -->` directive;
+    // an unannotated table is left as a plain table.
+    let markdown = r#"A table reflows when annotated:
+
+<!-- reflow: 40rem -->
 
 | Name | Department | Started |
 | ---- | ---------- | ------- |
 | Ada | Platform | 2021 |
 | Linus | Kernel | 2019 |
 
-And one can be opted out per-table:
-
-<!-- rt: off -->
+A table without the annotation stays plain:
 
 | x | y |
 | - | - |
 | 1 | 2 |
 "#;
-    let body = common::render_with_config(markdown, config).unwrap().body;
+    let body = common::render(markdown).unwrap().body;
     insta::assert_snapshot!(body);
 }
 
 #[test]
-fn responsive_tables_off_by_default() {
-    // With the default config the table HTML is unchanged (no wrapper / data-label).
+fn tables_are_plain_without_reflow_directive() {
+    // With no directive the table HTML is unchanged (no wrapper / data-label / style).
     let markdown = "| Name | Role |\n| ---- | ---- |\n| Ada | Eng |";
     let body = common::render(markdown).unwrap().body;
     assert!(!body.contains("data-label"));
-    assert!(!body.contains("class=\"rt"));
+    assert!(!body.contains("class=\"reflow"));
+    assert!(!body.contains("<style"));
     insta::assert_snapshot!(body);
 }

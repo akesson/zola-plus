@@ -1,5 +1,5 @@
 ---
 source: components/markdown/src/markdown.rs
-expression: render_responsive_table(content)
+expression: render_reflow(content)
 ---
 <p>Just a paragraph, no table here.</p>

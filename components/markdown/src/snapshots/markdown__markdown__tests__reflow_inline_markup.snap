@@ -1,0 +1,8 @@
+---
+source: components/markdown/src/markdown.rs
+expression: render_reflow(content)
+---
+<div class="reflow reflow-bp-30rem"><table><thead><tr><th scope="col"><strong>Bold head</strong></th><th scope="col"><code>code</code></th></tr></thead><tbody>
+<tr><td data-label="Bold head"><em>em</em></td><td data-label="code"><a href="https://example.com">x</a></td></tr>
+</tbody></table>
+</div>

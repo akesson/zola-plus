@@ -235,6 +235,27 @@ fn can_build_site_without_live_reload() {
 }
 
 #[test]
+fn can_generate_reflow_css_for_annotated_tables() {
+    let (_, _tmp_dir, public) = build_site("test_site");
+
+    // A table annotated with `<!-- reflow: 40rem -->` is wrapped with the
+    // breakpoint-encoding class and its cells get a data-label — but no CSS is
+    // inlined into the page itself.
+    assert!(file_contains!(public, "root-page-1/index.html", "class=\"reflow reflow-bp-40rem\""));
+    assert!(file_contains!(public, "root-page-1/index.html", "data-label=\"Name\""));
+    assert!(!file_contains!(public, "root-page-1/index.html", "<style>.reflow"));
+
+    // The matching container query ships once in a generated reflow.css.
+    assert!(file_exists!(public, "reflow.css"));
+    assert!(file_contains!(public, "reflow.css", "@container (max-width: 40rem)"));
+    assert!(file_contains!(
+        public,
+        "reflow.css",
+        ".reflow-bp-40rem td::before { content: attr(data-label); }"
+    ));
+}
+
+#[test]
 fn can_build_site_with_live_reload_and_drafts() {
     let (site, _tmp_dir, public) = build_site_with_setup("test_site", |mut site| {
         use std::net::IpAddr;
