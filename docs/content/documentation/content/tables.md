@@ -95,14 +95,20 @@ column, at any font size or zoom.
 ## Choosing the breakpoint per table
 
 By default the breakpoint is estimated from the number of columns and the width of
-the content. To override it for a single table, put a directive comment on the line
-before the table:
+the content. To override it for a single table, put a directive comment on its own
+line directly above the table, with a **blank line between the comment and the
+table**:
 
 ```md
 <!-- rt: bp=64 -->
 
 | … | … |
 ```
+
+The blank line is required: without it the table is absorbed into the HTML comment
+block and won't render as a table at all. The directive applies only to the table
+that *immediately* follows it — if other content comes in between, the directive is
+ignored (so a stray directive can't silently affect an unrelated table further down).
 
 - `bp=64` — force the breakpoint to 64 `ch` (snapped to the nearest ladder rung).
 - `bp=auto` — the default (estimate from content).
@@ -122,3 +128,7 @@ before the table:
   hidden visually, but a card layout can still change how some screen readers
   announce the table. Test with assistive technology, and prefer `off` for tables
   where the tabular relationship is essential.
+- **Feeds and other consumers.** The wrapper `<div class="rt …">` and the
+  `data-label` attributes are part of the rendered body, so they also appear in
+  your Atom/RSS feeds. Without the stylesheet they're inert — the table simply
+  renders as a normal table — so this degrades gracefully.

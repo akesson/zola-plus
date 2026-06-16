@@ -353,7 +353,18 @@ fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
                 let directive = std::mem::take(&mut pending);
                 emit_table(&mut out, aligns, table, directive);
             }
-            other => out.push(other),
+            other => {
+                // A directive applies only to a table that *immediately* follows it.
+                // The directive comment is itself wrapped in `HtmlBlock` start/end
+                // events, so those don't count as intervening content; anything else
+                // (a paragraph, heading, another block...) means the directive was
+                // misplaced — or its table was since removed — so drop it rather than
+                // let it silently attach to an unrelated table further down the page.
+                if !matches!(other, Event::Start(Tag::HtmlBlock) | Event::End(TagEnd::HtmlBlock)) {
+                    pending = TableDirective::default();
+                }
+                out.push(other);
+            }
         }
     }
 
@@ -1387,5 +1398,31 @@ mod tests {
     fn responsive_table_no_table_is_noop() {
         let content = "Just a paragraph, no table here.";
         assert_snapshot!(render_responsive_table(content));
+    }
+
+    #[test]
+    fn responsive_table_directive_does_not_leak_past_content() {
+        // A directive applies only to the table that immediately follows it. With
+        // unrelated content in between, the directive is dropped, so a stray `off`
+        // can't silently turn a later, unrelated table into a plain one.
+        let content =
+            "<!-- rt: off -->\n\nA paragraph in between.\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_responsive_table(content);
+        assert!(
+            html.contains(r#"<div class="rt rt--cards"#),
+            "table after intervening content must stay responsive, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn responsive_table_escapes_header_in_data_label() {
+        // Header text flows into a double-quoted `data-label`; quotes, ampersands and
+        // angle brackets must be escaped or a header could break out of the attribute.
+        let content = "| Tom & \"Jerry\" |\n| --- |\n| x |";
+        let html = render_responsive_table(content);
+        assert!(
+            html.contains(r#"data-label="Tom &amp; &quot;Jerry&quot;""#),
+            "header must be attribute-escaped in data-label, got:\n{html}"
+        );
     }
 }
