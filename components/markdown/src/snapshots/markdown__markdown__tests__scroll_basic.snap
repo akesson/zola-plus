@@ -1,0 +1,9 @@
+---
+source: components/markdown/src/markdown.rs
+expression: render_scroll(content)
+---
+<div class="table-scroll"><table><thead><tr><th>Name</th><th>Department</th></tr></thead><tbody>
+<tr><td>Ada</td><td>Platform</td></tr>
+<tr><td>Linus</td><td>Kernel</td></tr>
+</tbody></table>
+</div>

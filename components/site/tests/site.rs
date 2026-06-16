@@ -253,7 +253,19 @@ fn can_generate_responsive_tables_css_for_annotated_tables() {
         "class=\"transpose transpose-bp-40rem transpose-cols-2\""
     ));
 
-    // Both features' container queries ship once in a single responsive-tables.css.
+    // A `<!-- scroll -->` table is wrapped for horizontal panning.
+    assert!(file_contains!(public, "root-page-1/index.html", "class=\"table-scroll\""));
+
+    // An `<!-- expand: 40rem -->` table is wrapped with the breakpoint class, gets a
+    // `:target` id, and an open link pointing at that id.
+    assert!(file_contains!(
+        public,
+        "root-page-1/index.html",
+        "class=\"table-expand table-expand-bp-40rem\" id=\"table-expand-1\""
+    ));
+    assert!(file_contains!(public, "root-page-1/index.html", "href=\"#table-expand-1\""));
+
+    // Every feature's rules ship once in a single responsive-tables.css.
     assert!(file_exists!(public, "responsive-tables.css"));
     assert!(file_contains!(public, "responsive-tables.css", "@container (max-width: 40rem)"));
     assert!(file_contains!(
@@ -265,6 +277,12 @@ fn can_generate_responsive_tables_css_for_annotated_tables() {
         public,
         "responsive-tables.css",
         "grid-template-rows: repeat(2, auto);"
+    ));
+    assert!(file_contains!(public, "responsive-tables.css", ".table-scroll { overflow-x: auto; }"));
+    assert!(file_contains!(
+        public,
+        "responsive-tables.css",
+        ".table-expand:target { position: fixed; inset: 0;"
     ));
 }
 

@@ -835,14 +835,16 @@ impl Site {
         Ok(())
     }
 
-    /// Write a single `responsive-tables.css` combining every `reflow` and
-    /// `transpose` breakpoint used across the site (collected during markdown
-    /// rendering). Skipped when neither feature is used. The site links it once,
-    /// like the highlighting CSS.
+    /// Write a single `responsive-tables.css` combining every responsive-table
+    /// feature used across the site — `reflow`, `transpose`, `scroll`, and `expand`
+    /// (collected during markdown rendering). Skipped when none are used. The site
+    /// links it once, like the highlighting CSS.
     pub fn render_responsive_tables_css(&self) -> Result<()> {
         let reflow = markdown::reflow_breakpoints();
         let transpose = markdown::transpose_breakpoints();
-        if reflow.is_empty() && transpose.is_empty() {
+        let expand = markdown::expand_breakpoints();
+        let scroll = markdown::scroll_used();
+        if reflow.is_empty() && transpose.is_empty() && expand.is_empty() && !scroll {
             return Ok(());
         }
         let mut css = String::new();
@@ -851,6 +853,12 @@ impl Site {
         }
         if !transpose.is_empty() {
             css.push_str(&markdown::transpose_css(&transpose));
+        }
+        if !expand.is_empty() {
+            css.push_str(&markdown::expand_css(&expand));
+        }
+        if scroll {
+            css.push_str(&markdown::scroll_css());
         }
         create_directory(&self.output_path)?;
         create_file(&self.output_path.join("responsive-tables.css"), css)?;

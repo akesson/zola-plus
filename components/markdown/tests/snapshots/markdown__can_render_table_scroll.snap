@@ -1,0 +1,14 @@
+---
+source: components/markdown/tests/markdown.rs
+expression: body
+---
+<p>A wide table pans horizontally when annotated:</p>
+<div class="table-scroll"><table><thead><tr><th>Name</th><th>Department</th><th>Started</th></tr></thead><tbody>
+<tr><td>Ada</td><td>Platform</td><td>2021</td></tr>
+<tr><td>Linus</td><td>Kernel</td><td>2019</td></tr>
+</tbody></table>
+</div>
+<p>A table without the annotation stays plain:</p>
+<table><thead><tr><th>x</th><th>y</th></tr></thead><tbody>
+<tr><td>1</td><td>2</td></tr>
+</tbody></table>

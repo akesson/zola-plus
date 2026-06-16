@@ -551,3 +551,61 @@ fn tables_are_plain_without_transpose_directive() {
     assert!(!body.contains("<style"));
     insta::assert_snapshot!(body);
 }
+
+#[test]
+fn can_render_table_scroll() {
+    // A table scrolls only when it carries a `<!-- scroll -->` directive; an
+    // unannotated table is left plain. Scroll just wraps the table for `overflow-x`.
+    let markdown = r#"A wide table pans horizontally when annotated:
+
+<!-- scroll -->
+
+| Name | Department | Started |
+| ---- | ---------- | ------- |
+| Ada | Platform | 2021 |
+| Linus | Kernel | 2019 |
+
+A table without the annotation stays plain:
+
+| x | y |
+| - | - |
+| 1 | 2 |
+"#;
+    let body = common::render(markdown).unwrap().body;
+    insta::assert_snapshot!(body);
+}
+
+#[test]
+fn can_render_table_expand() {
+    // A table gains an expand overlay only when it carries a `<!-- expand: <length>
+    // -->` directive; an unannotated table is left plain. Expand wraps the table with
+    // open/close links and an id, and leaves the cells untouched.
+    let markdown = r#"A table can expand to a full-viewport overlay when annotated:
+
+<!-- expand: 40rem -->
+
+| Name | Department | Started |
+| ---- | ---------- | ------- |
+| Ada | Platform | 2021 |
+| Linus | Kernel | 2019 |
+
+A table without the annotation stays plain:
+
+| x | y |
+| - | - |
+| 1 | 2 |
+"#;
+    let body = common::render(markdown).unwrap().body;
+    insta::assert_snapshot!(body);
+}
+
+#[test]
+fn tables_are_plain_without_scroll_or_expand_directive() {
+    // With no directive the table HTML is unchanged (no scroll/expand wrapper).
+    let markdown = "| Name | Role |\n| ---- | ---- |\n| Ada | Eng |";
+    let body = common::render(markdown).unwrap().body;
+    assert!(!body.contains("class=\"table-scroll"));
+    assert!(!body.contains("class=\"table-expand"));
+    assert!(!body.contains("<style"));
+    insta::assert_snapshot!(body);
+}

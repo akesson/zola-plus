@@ -88,3 +88,68 @@
     }
   }
 }
+
+// Responsive-table demo chrome. The generated responsive-tables.css does layout
+// only; the responsive tables want a little site styling on top. This is that
+// styling for the docs. The doc content sits on a light panel
+// (`.content--reversed`) with dark text, so this chrome is light-panel-appropriate:
+// dark borders, a white overlay backdrop, dark buttons. It never sets `display` —
+// the generated CSS owns when the expand buttons show — only appearance.
+.reflow,
+.transpose,
+.table-scroll,
+.table-expand {
+  table { border-collapse: collapse; }
+  th, td { border: 1px solid rgba(0, 0, 0, 0.2); padding: 0.3rem 0.6rem; }
+}
+// reflow/transpose fill the frame; scroll/expand keep their intrinsic (wide) width
+// so there is something to pan, and their cells must not wrap.
+.reflow table, .transpose table { width: 100%; }
+.table-scroll th, .table-scroll td,
+.table-expand th, .table-expand td { white-space: nowrap; }
+
+// reflow cards + transposed header column read better with a couple of touches.
+.reflow td { gap: 0.15rem 0.75rem; text-align: left; }
+.reflow td::before { font-weight: 600; }
+.reflow tbody tr + tr { margin-top: 0.6rem; }   // a gap between record cards (ignored when not reflowed)
+.transpose th { text-align: left; }
+
+.table-expand {
+  .table-expand-open,
+  .table-expand-close {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.72);
+    color: #fff;
+    text-align: center;
+    line-height: 2rem;
+    text-decoration: none;
+  }
+
+  &:target {
+    background: #fff;                  // the opaque overlay backdrop a site must supply
+    padding: 0 1rem 1rem;
+
+    .table-expand-close { margin: 0.75rem 0; }
+    .table-expand-scroll { padding-right: 1rem; }
+  }
+}
+
+// A self-contained demo frame. Because the responsive tables react to their own
+// container's width (a container query, not the viewport), a constrained, resizable
+// frame lets each one demonstrate itself without resizing the browser: it starts
+// narrower than the breakpoint (so the responsive layout shows by default), and you
+// can drag its right edge wider to watch it snap back to a normal table.
+.table-demo {
+  width: 21rem;
+  max-width: 100%;
+  min-width: 13rem;
+  resize: horizontal;
+  overflow: auto;
+  margin: 1rem 0;
+  padding: 0.75rem 1rem 1.25rem;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  background: #fff;
+}

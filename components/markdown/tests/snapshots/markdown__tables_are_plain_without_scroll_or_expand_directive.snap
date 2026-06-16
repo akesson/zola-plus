@@ -1,0 +1,7 @@
+---
+source: components/markdown/tests/markdown.rs
+expression: body
+---
+<table><thead><tr><th>Name</th><th>Role</th></tr></thead><tbody>
+<tr><td>Ada</td><td>Eng</td></tr>
+</tbody></table>

@@ -225,7 +225,7 @@ fn get_text(parser_slice: &[Event]) -> String {
     title
 }
 
-// --- Responsive tables (reflow + transpose) ----------------------------------
+// --- Responsive tables (reflow / transpose / scroll / expand) ----------------
 //
 // A markdown table becomes responsive on narrow containers when it carries a
 // directive on its own line directly above it (with a blank line in between):
@@ -238,15 +238,28 @@ fn get_text(parser_slice: &[Event]) -> String {
 //     row becomes a left-hand label column. We only wrap it in
 //     `<div class="transpose transpose-bp-<token> transpose-cols-<n>">`; the
 //     cells are left untouched (a pure CSS-grid flip, see `transpose_css`).
+//   * `<!-- scroll -->` — a wide table pans horizontally inside its column. We
+//     wrap it in `<div class="table-scroll">` and the generated CSS gives that
+//     wrapper `overflow-x: auto`. No breakpoint: `overflow-x: auto` is a no-op
+//     while the table fits.
+//   * `<!-- expand: <length> -->` — adds a button that opens the table in a
+//     JS-free, full-viewport `:target` overlay you can pan. We wrap it in
+//     `<div class="table-expand table-expand-bp-<token>" id="table-expand-N">`
+//     with open/close links; the breakpoint gates *when the button is offered*
+//     (only while the container is narrower than it). Unlike the others this
+//     needs an id per table, and its generated CSS is layout-only — the overlay
+//     ships no background or button chrome (see `expand_css`); the author adds
+//     that via the `.table-expand` class.
 //
 // The breakpoint lives in the class (`reflow-bp-65rem`), not in the markup's CSS.
 // Each distinct breakpoint used across the site gets one container query in the
-// generated stylesheet (see `reflow_css` / `transpose_css`), which the site links
-// once as `responsive-tables.css` — exactly how class-based syntax highlighting
-// ships `giallo.css`. (A container query can't read a custom property in its
-// condition, so the value must live in a rule keyed by class.) The generated CSS
-// does the reflow/transpose *only* (no margins/colours/fonts); the stable
-// `.reflow` / `.transpose` classes are the author's hook for cosmetic styling.
+// generated stylesheet (see `reflow_css` / `transpose_css` / `expand_css`), which
+// the site links once as `responsive-tables.css` — exactly how class-based syntax
+// highlighting ships `giallo.css`. (A container query can't read a custom property
+// in its condition, so the value must live in a rule keyed by class.) The generated
+// CSS does the layout *only* (no margins/colours/fonts); the stable `.reflow` /
+// `.transpose` / `.table-scroll` / `.table-expand` classes are the author's hook
+// for cosmetic styling.
 //
 // A table without a directive is left completely untouched. See
 // docs/content/documentation/content/tables.md.
@@ -258,6 +271,10 @@ enum TableMode {
     Reflow,
     /// `<!-- transpose: <length> -->` — table flips (see `emit_transpose_table`).
     Transpose,
+    /// `<!-- scroll -->` — wide table pans horizontally (see `emit_scroll_table`).
+    Scroll,
+    /// `<!-- expand: <length> -->` — full-viewport overlay (see `emit_expand_table`).
+    Expand,
 }
 
 /// Matches a per-table `<!-- reflow: <length> -->` directive comment.
@@ -278,14 +295,38 @@ static TRANSPOSE_DIRECTIVE_RE: Lazy<Regex> = Lazy::new(|| {
         .unwrap()
 });
 
-/// The responsive mode a raw-HTML event selects, if any. `reflow` is checked first
-/// so that, were both somehow present in one comment, it would win the match — but
-/// the two are mutually exclusive in practice.
+/// Matches a per-table `<!-- expand: <length> -->` directive comment.
+static EXPAND_DIRECTIVE_RE: Lazy<Regex> = Lazy::new(|| {
+    RegexBuilder::new(r#"<!--\s*expand:\s*(.*?)\s*-->"#)
+        .case_insensitive(true)
+        .dot_matches_new_line(true)
+        .build()
+        .unwrap()
+});
+
+/// Matches a per-table `<!-- scroll -->` directive comment. Valueless: a wide table
+/// just pans horizontally, so there is no breakpoint to parse.
+static SCROLL_DIRECTIVE_RE: Lazy<Regex> = Lazy::new(|| {
+    RegexBuilder::new(r#"<!--\s*scroll\s*-->"#)
+        .case_insensitive(true)
+        .dot_matches_new_line(true)
+        .build()
+        .unwrap()
+});
+
+/// The responsive mode a raw-HTML event selects, if any. The modes are mutually
+/// exclusive in practice; the order here is the tie-break if a comment somehow
+/// matched more than one. The valued forms (`reflow`/`transpose`/`expand:`) and the
+/// valueless `scroll` use distinct keywords, so they never overlap.
 fn directive_mode(html: &str) -> Option<TableMode> {
     if REFLOW_DIRECTIVE_RE.is_match(html) {
         Some(TableMode::Reflow)
     } else if TRANSPOSE_DIRECTIVE_RE.is_match(html) {
         Some(TableMode::Transpose)
+    } else if EXPAND_DIRECTIVE_RE.is_match(html) {
+        Some(TableMode::Expand)
+    } else if SCROLL_DIRECTIVE_RE.is_match(html) {
+        Some(TableMode::Scroll)
     } else {
         None
     }
@@ -340,6 +381,44 @@ fn record_transpose_breakpoint(bp: &str, ncols: usize) {
 /// The transpose specs recorded so far, for the generated responsive-table stylesheet.
 pub fn transpose_breakpoints() -> BTreeSet<(String, usize)> {
     TRANSPOSE_BREAKPOINTS.lock().unwrap().clone()
+}
+
+/// Breakpoints (`<!-- expand: <length> -->` values) seen while rendering. Each one
+/// gates a button: the expand control is offered only while the container is
+/// narrower than its breakpoint. Process-global for the same reasons as
+/// `REFLOW_BREAKPOINTS`.
+static EXPAND_BREAKPOINTS: Lazy<Mutex<BTreeSet<String>>> =
+    Lazy::new(|| Mutex::new(BTreeSet::new()));
+
+fn record_expand_breakpoint(bp: &str) {
+    EXPAND_BREAKPOINTS.lock().unwrap().insert(bp.to_string());
+}
+
+/// The expand breakpoints recorded so far, for the generated responsive-table stylesheet.
+pub fn expand_breakpoints() -> BTreeSet<String> {
+    EXPAND_BREAKPOINTS.lock().unwrap().clone()
+}
+
+/// Whether any `<!-- scroll -->` table was seen while rendering. Scroll has no
+/// breakpoint, so a single flag is enough to decide whether the (static) scroll
+/// rule belongs in the generated stylesheet. `Mutex<bool>` for the same
+/// process-global reasons as `REFLOW_BREAKPOINTS`.
+static SCROLL_USED: Mutex<bool> = Mutex::new(false);
+
+fn record_scroll_used() {
+    *SCROLL_USED.lock().unwrap() = true;
+}
+
+/// Whether a scroll table was recorded, for the generated responsive-table stylesheet.
+pub fn scroll_used() -> bool {
+    *SCROLL_USED.lock().unwrap()
+}
+
+/// Whether `html` is exactly the directive `re` matches, with nothing else around
+/// it (so the comment event can be dropped). Used for the valueless `scroll`
+/// directive, which has no length to validate.
+fn directive_standalone(html: &str, re: &Regex) -> bool {
+    re.find(html).map(|m| html.trim() == m.as_str()).unwrap_or(false)
 }
 
 /// Parse a `<!-- reflow: … -->` / `<!-- transpose: … -->` directive with its
@@ -420,25 +499,40 @@ fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
 
     let old = std::mem::take(events);
     let mut out: Vec<Event> = Vec::with_capacity(old.len() + 16);
-    // A pending directive (mode + breakpoint), awaiting its table.
+    // A pending directive (mode + breakpoint), awaiting its table. `scroll` has no
+    // breakpoint, so it carries an empty placeholder string.
     let mut pending: Option<(TableMode, String)> = None;
+    // Per-document sequence for `expand` ids; only needs to be unique within this
+    // render (`:target` is per-page). Deterministic, so output stays reproducible.
+    let mut expand_seq = 0usize;
     let mut it = old.into_iter();
 
     while let Some(ev) = it.next() {
         match ev {
             Event::Html(ref html) if directive_mode(html).is_some() => {
                 let mode = directive_mode(html).expect("guard checked it is a directive");
-                let re = match mode {
-                    TableMode::Reflow => &*REFLOW_DIRECTIVE_RE,
-                    TableMode::Transpose => &*TRANSPOSE_DIRECTIVE_RE,
-                };
-                if let Some((bp, standalone)) = parse_directive(html, re) {
-                    pending = bp.map(|bp| (mode, bp));
-                    // Keep the event only if it carried more than the directive.
-                    if !standalone {
-                        out.push(ev);
+                let standalone = match mode {
+                    TableMode::Scroll => {
+                        // Valueless directive: nothing to validate, always pends.
+                        pending = Some((TableMode::Scroll, String::new()));
+                        directive_standalone(html, &SCROLL_DIRECTIVE_RE)
                     }
-                } else {
+                    TableMode::Reflow | TableMode::Transpose | TableMode::Expand => {
+                        let re = match mode {
+                            TableMode::Reflow => &*REFLOW_DIRECTIVE_RE,
+                            TableMode::Transpose => &*TRANSPOSE_DIRECTIVE_RE,
+                            TableMode::Expand => &*EXPAND_DIRECTIVE_RE,
+                            TableMode::Scroll => unreachable!("scroll handled above"),
+                        };
+                        let (bp, standalone) =
+                            parse_directive(html, re).expect("guard checked it matches");
+                        // An invalid length yields `None`: no pending, table stays plain.
+                        pending = bp.map(|bp| (mode, bp));
+                        standalone
+                    }
+                };
+                // Keep the event only if it carried more than the directive.
+                if !standalone {
                     out.push(ev);
                 }
             }
@@ -461,6 +555,15 @@ fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
                         let ncols = aligns.len().max(1);
                         record_transpose_breakpoint(&bp, ncols);
                         emit_transpose_table(&mut out, aligns, table, &bp, ncols);
+                    }
+                    Some((TableMode::Expand, bp)) => {
+                        record_expand_breakpoint(&bp);
+                        expand_seq += 1;
+                        emit_expand_table(&mut out, aligns, table, &bp, expand_seq);
+                    }
+                    Some((TableMode::Scroll, _)) => {
+                        record_scroll_used();
+                        emit_scroll_table(&mut out, aligns, table);
                     }
                     None => {
                         out.push(Event::Start(Tag::Table(aligns)));
@@ -568,6 +671,47 @@ fn emit_transpose_table<'a>(
     out.push(Event::Html("</div>".into()));
 }
 
+/// Emit one scrollable table: a `<div class="table-scroll">` wrapper around the
+/// *unchanged* table. The generated CSS gives the wrapper `overflow-x: auto` (see
+/// `scroll_css`), so a table wider than its column pans horizontally instead of
+/// overflowing the page. `table` holds the events after `Start(Table)` up to and
+/// including `End(Table)`.
+fn emit_scroll_table<'a>(out: &mut Vec<Event<'a>>, aligns: Vec<Alignment>, table: Vec<Event<'a>>) {
+    out.push(Event::Html(r#"<div class="table-scroll">"#.into()));
+    out.push(Event::Start(Tag::Table(aligns)));
+    out.extend(table);
+    out.push(Event::Html("</div>".into()));
+}
+
+/// Emit one expandable table: a `<div class="table-expand table-expand-bp-{token}"
+/// id="table-expand-{seq}">` wrapper holding an open link, a close link, and the
+/// *unchanged* table inside a `table-expand-scroll` pan area. The overlay is a pure
+/// JS-free CSS `:target` toggle: clicking the open link points the URL fragment at
+/// the wrapper's id, and `.table-expand:target` (in `expand_css`) restyles the same
+/// element to fill the viewport — no DOM duplication. The generated CSS is
+/// layout-only; the author supplies the overlay background and button styling via
+/// the `.table-expand` class. `seq` need only be unique within the page. `table`
+/// holds the events after `Start(Table)` up to and including `End(Table)`.
+fn emit_expand_table<'a>(
+    out: &mut Vec<Event<'a>>,
+    aligns: Vec<Alignment>,
+    table: Vec<Event<'a>>,
+    bp: &str,
+    seq: usize,
+) {
+    let token = reflow_class_token(bp);
+    let id = format!("table-expand-{seq}");
+    out.push(Event::Html(
+        format!(
+            r##"<div class="table-expand table-expand-bp-{token}" id="{id}"><a class="table-expand-open" href="#{id}" aria-label="View table fullscreen">⛶</a><a class="table-expand-close" href="#" aria-label="Close fullscreen">✕</a><div class="table-expand-scroll">"##
+        )
+        .into(),
+    ));
+    out.push(Event::Start(Tag::Table(aligns)));
+    out.extend(table);
+    out.push(Event::Html("</div></div>".into()));
+}
+
 /// Map a validated breakpoint length to its CSS class / selector token. Lengths are
 /// `<number><unit>`; the only character invalid in a class name is the decimal
 /// point, which becomes `_` (so `37.5rem` -> `37_5rem`). Unambiguous because a
@@ -622,6 +766,69 @@ pub fn transpose_css(breakpoints: &BTreeSet<(String, usize)>) -> String {
         ));
         css.push_str(&format!(
             "  .transpose-bp-{t} thead,\n  .transpose-bp-{t} tbody,\n  .transpose-bp-{t} tr {{ display: contents; }}\n"
+        ));
+        css.push_str("}\n\n");
+    }
+    css
+}
+
+/// Generate the scroll rule for the responsive-table stylesheet: one static rule
+/// giving `.table-scroll` wrappers `overflow-x: auto`. Emitted once if any
+/// `<!-- scroll -->` table exists; there is no breakpoint (the rule is harmless
+/// while the table fits). Authors style the wrapper via the stable `.table-scroll`
+/// class.
+pub fn scroll_css() -> String {
+    String::from(
+        "/* Table scroll — generated by zola-plus from `<!-- scroll -->` annotations.\n   Lets a wide table pan horizontally within its column. Style via the `.table-scroll` class. */\n\n.table-scroll { overflow-x: auto; }\n\n",
+    )
+}
+
+/// Generate the expand rules for the responsive-table stylesheet: one static block
+/// of overlay structure plus one container query per breakpoint that reveals the
+/// open button only while the container is narrower than that breakpoint.
+///
+/// The overlay is a JS-free CSS `:target` toggle. Inline, the wrapper is a normal
+/// (optionally scrollable) table with a hidden close link and a button that the
+/// container query shows when the table is cramped. Clicking the button targets the
+/// wrapper's id, so `.table-expand:target` restyles the *same* element to
+/// `position: fixed; inset: 0` — a full-viewport, pannable overlay, with no DOM
+/// duplication. (`container-type` here makes the wrapper its own query container;
+/// an element's containment governs its descendants, not its own positioning, so
+/// the wrapper still resolves `position: fixed` against the viewport.)
+///
+/// These rules are **layout only**: no background, colours, or button chrome. That
+/// is deliberate — without an opaque background the overlay shows the page behind
+/// it, so the author is expected to add appearance via the stable `.table-expand`
+/// class (see the docs). The breakpoint token keys the button-gating query, exactly
+/// like reflow/transpose.
+pub fn expand_css(breakpoints: &BTreeSet<String>) -> String {
+    let mut css = String::from(
+        "/* Table expand — generated by zola-plus from `<!-- expand: <length> -->` annotations.\n   Layout only: a JS-free `:target` overlay. Add the overlay background and button\n   styling yourself via the `.table-expand` class. */\n\n",
+    );
+    // Static overlay structure, identical for every expandable table.
+    css.push_str(".table-expand { position: relative; container-type: inline-size; }\n");
+    css.push_str(".table-expand .table-expand-scroll { overflow: auto; }\n");
+    css.push_str(
+        ".table-expand .table-expand-open { position: absolute; top: 0; right: 0; display: none; }\n",
+    );
+    css.push_str(".table-expand .table-expand-close { display: none; }\n");
+    css.push_str(
+        ".table-expand:target { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; }\n",
+    );
+    css.push_str(".table-expand:target .table-expand-open { display: none; }\n");
+    css.push_str(
+        ".table-expand:target .table-expand-scroll { flex: 1 1 auto; min-height: 0; }\n",
+    );
+    css.push_str(
+        ".table-expand:target .table-expand-close { display: block; align-self: flex-end; }\n\n",
+    );
+    // Per-breakpoint: offer the open button only while the container is narrower
+    // than the breakpoint (above it the table fits, so no button is shown).
+    for bp in breakpoints {
+        let t = reflow_class_token(bp);
+        css.push_str(&format!("@container (max-width: {bp}) {{\n"));
+        css.push_str(&format!(
+            "  .table-expand-bp-{t} .table-expand-open {{ display: block; }}\n"
         ));
         css.push_str("}\n\n");
     }
@@ -1751,5 +1958,159 @@ mod tests {
         );
         assert!(!css.contains("var("), "repeat() must use a literal count, got:\n{css}");
         assert!(css.contains(".transpose-bp-30rem tr { display: contents; }"), "got:\n{css}");
+    }
+
+    // `transform_tables` dispatches on the directive comment, so scroll and expand
+    // share the same render pipeline as reflow/transpose.
+    fn render_scroll(content: &str) -> String {
+        render_transpose(content)
+    }
+
+    fn render_expand(content: &str) -> String {
+        render_transpose(content)
+    }
+
+    #[test]
+    fn scroll_basic() {
+        // Annotated table: a `table-scroll` wrapper around the unchanged table.
+        let content =
+            "<!-- scroll -->\n\n| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
+        assert_snapshot!(render_scroll(content));
+    }
+
+    #[test]
+    fn scroll_unannotated_table_is_plain() {
+        let content = "| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_scroll(content);
+        assert!(
+            !html.contains("table-scroll") && !html.contains("<style"),
+            "unannotated table must stay plain, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn scroll_directive_does_not_leak_past_content() {
+        let content =
+            "<!-- scroll -->\n\nA paragraph in between.\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_scroll(content);
+        assert!(
+            !html.contains("table-scroll"),
+            "scroll must not attach across intervening content, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn scroll_css_emits_overflow_rule() {
+        let css = scroll_css();
+        assert!(css.contains(".table-scroll { overflow-x: auto; }"), "got:\n{css}");
+        // Static rule, no breakpoint machinery.
+        assert!(!css.contains("@container"), "scroll needs no container query, got:\n{css}");
+    }
+
+    #[test]
+    fn expand_basic() {
+        // Annotated table: a `table-expand` wrapper with open/close links and the
+        // unchanged table inside a `table-expand-scroll` pan area.
+        let content =
+            "<!-- expand: 40rem -->\n\n| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
+        assert_snapshot!(render_expand(content));
+    }
+
+    #[test]
+    fn expand_alignment() {
+        // Native cell alignment passes straight through; expand only wraps.
+        let content = "<!-- expand: 30rem -->\n\n| L | C | R |\n|:--|:-:|--:|\n| a | b | c |";
+        assert_snapshot!(render_expand(content));
+    }
+
+    #[test]
+    fn expand_unannotated_table_is_plain() {
+        let content = "| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_expand(content);
+        assert!(
+            !html.contains("table-expand") && !html.contains("<style"),
+            "unannotated table must stay plain, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn expand_directive_does_not_leak_past_content() {
+        let content =
+            "<!-- expand: 40rem -->\n\nA paragraph in between.\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_expand(content);
+        assert!(
+            !html.contains("table-expand"),
+            "expand must not attach across intervening content, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn expand_invalid_length_is_plain() {
+        let content = "<!-- expand: huge -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_expand(content);
+        assert!(
+            !html.contains("table-expand") && !html.contains("<style"),
+            "an invalid length must leave the table plain, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn expand_class_encodes_breakpoint_and_assigns_unique_ids() {
+        // The decimal point in the breakpoint is sanitized to `_`
+        // (`37.5rem` -> `table-expand-bp-37_5rem`), and each table in the render gets
+        // a unique `:target` id. No CSS is inlined — it ships in the generated file.
+        let content = "<!-- expand: 37.5rem -->\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n<!-- expand: 37.5rem -->\n\n| C | D |\n| - | - |\n| 3 | 4 |";
+        let html = render_expand(content);
+        assert!(
+            html.contains(
+                r#"<div class="table-expand table-expand-bp-37_5rem" id="table-expand-1">"#
+            ),
+            "got:\n{html}"
+        );
+        assert!(
+            html.contains(r#"id="table-expand-2">"#),
+            "the second table needs a distinct id, got:\n{html}"
+        );
+        assert!(
+            html.contains(r##"href="#table-expand-1""##),
+            "the open link targets the wrapper id, got:\n{html}"
+        );
+        assert!(!html.contains("<style"), "no inlined CSS, got:\n{html}");
+    }
+
+    #[test]
+    fn expand_and_reflow_are_mutually_exclusive() {
+        // When both directives precede one table, the last one wins (here expand).
+        let content =
+            "<!-- reflow: 40rem -->\n\n<!-- expand: 30rem -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let html = render_expand(content);
+        assert!(
+            html.contains("class=\"table-expand") && !html.contains("class=\"reflow"),
+            "the last directive should win, got:\n{html}"
+        );
+    }
+
+    #[test]
+    fn expand_css_emits_static_overlay_and_gated_button() {
+        let mut set = std::collections::BTreeSet::new();
+        set.insert("40rem".to_string());
+        let css = expand_css(&set);
+        // The :target overlay restyles the same element to fill the viewport.
+        assert!(
+            css.contains(".table-expand:target { position: fixed; inset: 0;"),
+            "got:\n{css}"
+        );
+        // The open button is gated behind the breakpoint's container query.
+        assert!(css.contains("@container (max-width: 40rem) {"), "got:\n{css}");
+        assert!(
+            css.contains(".table-expand-bp-40rem .table-expand-open { display: block; }"),
+            "got:\n{css}"
+        );
+        // Layout only — no cosmetic chrome is emitted (the comment may mention
+        // "background", so check for actual property declarations, not the word).
+        assert!(
+            !css.contains("background:") && !css.contains("color:"),
+            "expand CSS must be layout-only, got:\n{css}"
+        );
     }
 }
