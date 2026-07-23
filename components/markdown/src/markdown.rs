@@ -721,12 +721,26 @@ fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
             }
             other => {
                 // A directive applies only to a table that *immediately* follows it.
-                // The directive comment is itself wrapped in `HtmlBlock` start/end
-                // events, so those don't count as intervening content; anything else
-                // (a paragraph, heading, another block...) means the directive was
+                // Two kinds of event sit between the two without being content: the
+                // `HtmlBlock` start/end wrapping the comment, and a whitespace-only
+                // `Html` fragment — given CRLF input pulldown-cmark splits the
+                // comment's line ending into an event of its own, so counting that as
+                // content would drop every directive on a Windows checkout. Anything
+                // else (a paragraph, heading, another block...) means the directive was
                 // misplaced — or its table was since removed — so drop it rather than
                 // let it silently attach to an unrelated table further down the page.
-                if !matches!(other, Event::Start(Tag::HtmlBlock) | Event::End(TagEnd::HtmlBlock)) {
+                let blank_html = matches!(&other, Event::Html(html) if html.trim().is_empty());
+                if blank_html && pending.is_some() {
+                    // The consumed directive's own line ending: swallow it so CRLF
+                    // input renders byte-for-byte identically to LF.
+                    continue;
+                }
+                if !blank_html
+                    && !matches!(
+                        other,
+                        Event::Start(Tag::HtmlBlock) | Event::End(TagEnd::HtmlBlock)
+                    )
+                {
                     pending = None;
                 }
                 out.push(other);

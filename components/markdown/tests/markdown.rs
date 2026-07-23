@@ -702,3 +702,26 @@ fn invalid_table_directive_arguments_leave_table_plain() {
         assert!(!body.contains("<div"), "directive `{directive}` should be dropped: {body}");
     }
 }
+
+#[test]
+fn table_directives_survive_crlf_line_endings() {
+    // A Windows checkout (`core.autocrlf=true`) hands us CRLF markdown, and for
+    // that input pulldown-cmark emits the directive comment's line ending as an
+    // `Html` event of its own. That blank fragment must not count as content
+    // between the directive and its table, or every directive silently degrades
+    // to a plain table — the output has to match the LF render exactly.
+    for directive in [
+        "<!-- reflow: 40rem -->",
+        "<!-- transpose: 40rem -->",
+        "<!-- scroll -->",
+        "<!-- expand: 40rem -->",
+        "<!-- table: 54rem -->",
+    ] {
+        let lf = format!("{directive}\n\n| Name | Role |\n| ---- | ---- |\n| Ada | Eng |\n");
+        let crlf = lf.replace('\n', "\r\n");
+        let lf_body = common::render(&lf).unwrap().body;
+        let crlf_body = common::render(&crlf).unwrap().body;
+        assert!(lf_body.contains("<div"), "`{directive}` should wrap the table: {lf_body}");
+        assert_eq!(lf_body, crlf_body, "`{directive}` rendered differently under CRLF");
+    }
+}
