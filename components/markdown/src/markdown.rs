@@ -241,7 +241,10 @@ fn get_text(parser_slice: &[Event]) -> String {
 //   * `<!-- scroll -->` — a wide table pans horizontally inside its column. We
 //     wrap it in `<div class="table-scroll">` and the generated CSS gives that
 //     wrapper `overflow-x: auto`. No breakpoint: `overflow-x: auto` is a no-op
-//     while the table fits.
+//     while the table fits. A `sticky` argument (`<!-- scroll: sticky -->`) pins
+//     the first column while panning (`table-scroll-sticky`); `sticky <length>`
+//     additionally clamps that column to the given width and lets its labels
+//     wrap (`table-scroll-clamp` + `--sticky-w`).
 //   * `<!-- expand: <length> -->` — adds a button that opens the table in a
 //     JS-free, full-viewport `:target` overlay you can pan. We wrap it in
 //     `<div class="table-expand table-expand-bp-<token>" id="table-expand-N">`
@@ -250,6 +253,23 @@ fn get_text(parser_slice: &[Event]) -> String {
 //     needs an id per table, and its generated CSS is layout-only — the overlay
 //     ships no background or button chrome (see `expand_css`); the author adds
 //     that via the `.table-expand` class.
+//   * `<!-- table: <length> -->` — no pivot, just a measured width: wraps the
+//     table in `<div class="table-width" style="--table-w: <length>">`. For a
+//     table that fits everywhere but whose panel should sit at a fixed width.
+//
+// Directive arguments are whitespace-separated tokens after the colon: a bare
+// CSS length is the directive's primary value (the pivot breakpoint for
+// `reflow`/`transpose`/`expand`, the panel width for `table` and `scroll`);
+// `width <length>` sets the panel width on any directive (emitted as
+// `--table-w` on the wrapper — see `table_width_css`); `sticky [<length>]` is
+// `scroll`-only, as above. So `<!-- reflow: 37rem width 54rem -->` reads
+// "reflow below 37rem, panel width 54rem". An invalid token drops the whole
+// directive (with a warning) so a typo leaves the table plain, not half-styled.
+//
+// Group rows apply to *every* table, directive or not: a body row whose cells
+// after the first are all 3+ dashes (`| **sync** |----|----|`) echoes the
+// delimiter row and becomes a full-width group heading,
+// `<tr class="group"><th colspan="N">…</th></tr>` (see `rewrite_group_rows`).
 //
 // The breakpoint lives in the class (`reflow-bp-65rem`), not in the markup's CSS.
 // Each distinct breakpoint used across the site gets one container query in the
@@ -275,6 +295,30 @@ enum TableMode {
     Scroll,
     /// `<!-- expand: <length> -->` — full-viewport overlay (see `emit_expand_table`).
     Expand,
+    /// `<!-- table: <length> -->` — no pivot, just a measured panel width
+    /// (see `emit_width_table`).
+    Width,
+}
+
+/// A `sticky` argument on a `scroll` directive: pin the first column while panning.
+#[derive(Clone)]
+enum Sticky {
+    /// `sticky` — first column pinned at its natural width.
+    Natural,
+    /// `sticky <length>` — pinned and clamped to the given width, labels wrap.
+    Clamp(String),
+}
+
+/// The parsed arguments of one table directive.
+#[derive(Clone, Default)]
+struct DirectiveSpec {
+    /// Pivot breakpoint. Always present for `reflow`/`transpose`/`expand` (parsing
+    /// fails without it); never present for `scroll`/`table`.
+    bp: Option<String>,
+    /// Measured panel width, emitted as `--table-w` on the wrapper.
+    width: Option<String>,
+    /// Sticky first column (`scroll` only).
+    sticky: Option<Sticky>,
 }
 
 /// Matches a per-table `<!-- reflow: <length> -->` directive comment.
@@ -304,10 +348,21 @@ static EXPAND_DIRECTIVE_RE: Lazy<Regex> = Lazy::new(|| {
         .unwrap()
 });
 
-/// Matches a per-table `<!-- scroll -->` directive comment. Valueless: a wide table
-/// just pans horizontally, so there is no breakpoint to parse.
+/// Matches a per-table `<!-- scroll -->` / `<!-- scroll: <args> -->` directive
+/// comment. The bare form has no breakpoint — a wide table just pans — so the
+/// argument list is optional.
 static SCROLL_DIRECTIVE_RE: Lazy<Regex> = Lazy::new(|| {
-    RegexBuilder::new(r#"<!--\s*scroll\s*-->"#)
+    RegexBuilder::new(r#"<!--\s*scroll(?::\s*(.*?))?\s*-->"#)
+        .case_insensitive(true)
+        .dot_matches_new_line(true)
+        .build()
+        .unwrap()
+});
+
+/// Matches a per-table `<!-- table: <length> -->` directive comment (width only,
+/// no pivot).
+static TABLE_DIRECTIVE_RE: Lazy<Regex> = Lazy::new(|| {
+    RegexBuilder::new(r#"<!--\s*table:\s*(.*?)\s*-->"#)
         .case_insensitive(true)
         .dot_matches_new_line(true)
         .build()
@@ -327,8 +382,21 @@ fn directive_mode(html: &str) -> Option<TableMode> {
         Some(TableMode::Expand)
     } else if SCROLL_DIRECTIVE_RE.is_match(html) {
         Some(TableMode::Scroll)
+    } else if TABLE_DIRECTIVE_RE.is_match(html) {
+        Some(TableMode::Width)
     } else {
         None
+    }
+}
+
+/// The regex that recognizes (and captures the argument list of) `mode`'s directive.
+fn directive_regex(mode: TableMode) -> &'static Regex {
+    match mode {
+        TableMode::Reflow => &REFLOW_DIRECTIVE_RE,
+        TableMode::Transpose => &TRANSPOSE_DIRECTIVE_RE,
+        TableMode::Expand => &EXPAND_DIRECTIVE_RE,
+        TableMode::Scroll => &SCROLL_DIRECTIVE_RE,
+        TableMode::Width => &TABLE_DIRECTIVE_RE,
     }
 }
 
@@ -414,33 +482,112 @@ pub fn scroll_used() -> bool {
     *SCROLL_USED.lock().unwrap()
 }
 
-/// Whether `html` is exactly the directive `re` matches, with nothing else around
-/// it (so the comment event can be dropped). Used for the valueless `scroll`
-/// directive, which has no length to validate.
-fn directive_standalone(html: &str, re: &Regex) -> bool {
-    re.find(html).map(|m| html.trim() == m.as_str()).unwrap_or(false)
+/// Whether any directive carried a measured width (a `width <length>` argument or
+/// the `table:` directive), so the generated stylesheet needs the `--table-w` rule.
+/// `Mutex<bool>` for the same process-global reasons as `REFLOW_BREAKPOINTS`.
+static TABLE_WIDTH_USED: Mutex<bool> = Mutex::new(false);
+
+fn record_table_width_used() {
+    *TABLE_WIDTH_USED.lock().unwrap() = true;
 }
 
-/// Parse a `<!-- reflow: … -->` / `<!-- transpose: … -->` directive with its
-/// matching `re`. Returns the breakpoint (the validated CSS length, or `None` when
-/// the value isn't a valid length) together with whether the comment was the entire
-/// HTML event (so it can be dropped).
-fn parse_directive(html: &str, re: &Regex) -> Option<(Option<String>, bool)> {
-    let caps = re.captures(html)?;
-    let whole = caps.get(0).unwrap().as_str();
-    let value = caps.get(1).unwrap().as_str();
-    let standalone = html.trim() == whole;
-    if is_valid_css_length(value) {
-        // Normalize case so `40REM` and `40rem` share one class and one CSS rule.
-        Some((Some(value.to_ascii_lowercase()), standalone))
-    } else {
-        log::warn!(
-            "Ignoring responsive-table directive `{}`: `{}` is not a valid CSS length.",
-            whole.trim(),
-            value
-        );
-        Some((None, standalone))
+/// Whether a measured table width was recorded, for the generated responsive-table
+/// stylesheet.
+pub fn table_width_used() -> bool {
+    *TABLE_WIDTH_USED.lock().unwrap()
+}
+
+/// Parse a directive's argument list into a `DirectiveSpec` for `mode`.
+///
+/// Tokens are whitespace-separated: a bare CSS length is the mode's primary value
+/// (breakpoint for `reflow`/`transpose`/`expand`, panel width for `table` and
+/// `scroll`); `width <length>` sets the panel width; `sticky [<length>]` pins the
+/// first column of a `scroll` table. Lengths are lower-cased so `40REM` and `40rem`
+/// share one class and one CSS rule. Any invalid token drops the whole directive
+/// (with a warning, returning `None`) so a typo leaves the table plain rather than
+/// half-styled. `whole` is the full comment, for the warning.
+fn parse_directive_spec(mode: TableMode, args: &str, whole: &str) -> Option<DirectiveSpec> {
+    let reject = |problem: &str| {
+        log::warn!("Ignoring responsive-table directive `{}`: {}.", whole.trim(), problem);
+    };
+    let mut spec = DirectiveSpec::default();
+    let mut bare: Vec<String> = Vec::new();
+    let mut tokens = args.split_whitespace().peekable();
+    while let Some(tok) = tokens.next() {
+        match tok.to_ascii_lowercase().as_str() {
+            "width" => match tokens.next() {
+                Some(v) if is_valid_css_length(v) => {
+                    if spec.width.is_some() {
+                        reject("`width` given twice");
+                        return None;
+                    }
+                    spec.width = Some(v.to_ascii_lowercase());
+                }
+                _ => {
+                    reject("`width` must be followed by a CSS length");
+                    return None;
+                }
+            },
+            "sticky" => {
+                if !matches!(mode, TableMode::Scroll) {
+                    reject("`sticky` only applies to `scroll`");
+                    return None;
+                }
+                spec.sticky = Some(match tokens.peek() {
+                    Some(v) if is_valid_css_length(v) => {
+                        Sticky::Clamp(tokens.next().unwrap().to_ascii_lowercase())
+                    }
+                    _ => Sticky::Natural,
+                });
+            }
+            _ if is_valid_css_length(tok) => bare.push(tok.to_ascii_lowercase()),
+            _ => {
+                reject(&format!("`{tok}` is not a valid CSS length or argument"));
+                return None;
+            }
+        }
     }
+    // A bare length fills the mode's primary slot.
+    match mode {
+        TableMode::Reflow | TableMode::Transpose | TableMode::Expand => match bare.len() {
+            1 => spec.bp = bare.pop(),
+            0 => {
+                reject("missing the breakpoint length");
+                return None;
+            }
+            _ => {
+                reject("more than one bare length (breakpoint)");
+                return None;
+            }
+        },
+        TableMode::Scroll | TableMode::Width => match bare.len() {
+            0 => {}
+            1 if spec.width.is_none() => spec.width = bare.pop(),
+            _ => {
+                reject("more than one width");
+                return None;
+            }
+        },
+    }
+    if matches!(mode, TableMode::Width) && spec.width.is_none() {
+        reject("missing the width length");
+        return None;
+    }
+    Some(spec)
+}
+
+/// The inline `style` attribute carrying a directive's measured widths
+/// (`--table-w`, `--sticky-w`) on the wrapper, or an empty string. The values
+/// passed the CSS-length allowlist, so they are attribute-safe.
+fn wrapper_style_attr(spec: &DirectiveSpec) -> String {
+    let mut decls: Vec<String> = Vec::new();
+    if let Some(w) = &spec.width {
+        decls.push(format!("--table-w: {w}"));
+    }
+    if let Some(Sticky::Clamp(w)) = &spec.sticky {
+        decls.push(format!("--sticky-w: {w}"));
+    }
+    if decls.is_empty() { String::new() } else { format!(r#" style="{}""#, decls.join("; ")) }
 }
 
 fn reflow_align_attr(align: Alignment) -> &'static str {
@@ -490,18 +637,19 @@ fn collect_headers(table: &[Event], ncols: usize) -> Vec<String> {
 /// directive only wraps it (see `emit_transpose_table`). When both somehow precede
 /// one table the last one wins — they are mutually exclusive.
 fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
-    if !events
-        .iter()
-        .any(|e| matches!(e, Event::Html(html) if directive_mode(html).is_some()))
-    {
+    // Group-row rewriting applies to every table, directive or not, so any table
+    // (not just a directive) makes the pass necessary.
+    if !events.iter().any(|e| {
+        matches!(e, Event::Html(html) if directive_mode(html).is_some())
+            || matches!(e, Event::Start(Tag::Table(_)))
+    }) {
         return;
     }
 
     let old = std::mem::take(events);
     let mut out: Vec<Event> = Vec::with_capacity(old.len() + 16);
-    // A pending directive (mode + breakpoint), awaiting its table. `scroll` has no
-    // breakpoint, so it carries an empty placeholder string.
-    let mut pending: Option<(TableMode, String)> = None;
+    // A pending directive (mode + parsed arguments), awaiting its table.
+    let mut pending: Option<(TableMode, DirectiveSpec)> = None;
     // Per-document sequence for `expand` ids; only needs to be unique within this
     // render (`:target` is per-page). Deterministic, so output stays reproducible.
     let mut expand_seq = 0usize;
@@ -511,26 +659,12 @@ fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
         match ev {
             Event::Html(ref html) if directive_mode(html).is_some() => {
                 let mode = directive_mode(html).expect("guard checked it is a directive");
-                let standalone = match mode {
-                    TableMode::Scroll => {
-                        // Valueless directive: nothing to validate, always pends.
-                        pending = Some((TableMode::Scroll, String::new()));
-                        directive_standalone(html, &SCROLL_DIRECTIVE_RE)
-                    }
-                    TableMode::Reflow | TableMode::Transpose | TableMode::Expand => {
-                        let re = match mode {
-                            TableMode::Reflow => &*REFLOW_DIRECTIVE_RE,
-                            TableMode::Transpose => &*TRANSPOSE_DIRECTIVE_RE,
-                            TableMode::Expand => &*EXPAND_DIRECTIVE_RE,
-                            TableMode::Scroll => unreachable!("scroll handled above"),
-                        };
-                        let (bp, standalone) =
-                            parse_directive(html, re).expect("guard checked it matches");
-                        // An invalid length yields `None`: no pending, table stays plain.
-                        pending = bp.map(|bp| (mode, bp));
-                        standalone
-                    }
-                };
+                let caps = directive_regex(mode).captures(html).expect("guard checked it matches");
+                let whole = caps.get(0).unwrap().as_str();
+                let args = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+                let standalone = html.trim() == whole;
+                // An invalid spec yields `None`: no pending, the table stays plain.
+                pending = parse_directive_spec(mode, args, whole).map(|spec| (mode, spec));
                 // Keep the event only if it carried more than the directive.
                 if !standalone {
                     out.push(ev);
@@ -546,24 +680,38 @@ fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
                         break;
                     }
                 }
+                let ncols = aligns.len().max(1);
+                let table = rewrite_group_rows(table, ncols);
                 match pending.take() {
-                    Some((TableMode::Reflow, bp)) => {
-                        record_reflow_breakpoint(&bp);
-                        emit_reflow_table(&mut out, aligns, table, &bp);
-                    }
-                    Some((TableMode::Transpose, bp)) => {
-                        let ncols = aligns.len().max(1);
-                        record_transpose_breakpoint(&bp, ncols);
-                        emit_transpose_table(&mut out, aligns, table, &bp, ncols);
-                    }
-                    Some((TableMode::Expand, bp)) => {
-                        record_expand_breakpoint(&bp);
-                        expand_seq += 1;
-                        emit_expand_table(&mut out, aligns, table, &bp, expand_seq);
-                    }
-                    Some((TableMode::Scroll, _)) => {
-                        record_scroll_used();
-                        emit_scroll_table(&mut out, aligns, table);
+                    Some((mode, spec)) => {
+                        if spec.width.is_some() {
+                            record_table_width_used();
+                        }
+                        match mode {
+                            TableMode::Reflow => {
+                                let bp = spec.bp.as_deref().expect("parser requires a breakpoint");
+                                record_reflow_breakpoint(bp);
+                                emit_reflow_table(&mut out, aligns, table, &spec);
+                            }
+                            TableMode::Transpose => {
+                                let bp = spec.bp.as_deref().expect("parser requires a breakpoint");
+                                record_transpose_breakpoint(bp, ncols);
+                                emit_transpose_table(&mut out, aligns, table, &spec, ncols);
+                            }
+                            TableMode::Expand => {
+                                let bp = spec.bp.as_deref().expect("parser requires a breakpoint");
+                                record_expand_breakpoint(bp);
+                                expand_seq += 1;
+                                emit_expand_table(&mut out, aligns, table, &spec, expand_seq);
+                            }
+                            TableMode::Scroll => {
+                                record_scroll_used();
+                                emit_scroll_table(&mut out, aligns, table, &spec);
+                            }
+                            TableMode::Width => {
+                                emit_width_table(&mut out, aligns, table, &spec);
+                            }
+                        }
                     }
                     None => {
                         out.push(Event::Start(Tag::Table(aligns)));
@@ -589,6 +737,93 @@ fn transform_tables<'a>(events: &mut Vec<Event<'a>>) {
     *events = out;
 }
 
+/// Rewrite dash-rows into group headers: a body row whose cells after the first
+/// are all 3+ dashes echoes the delimiter row, so the source reads as a section
+/// divider:
+///
+/// ```markdown
+/// | **sync behaviour** |-------|-------|
+/// ```
+///
+/// The row becomes `<tr class="group"><th colspan="N">…</th></tr>` — a full-width
+/// group heading whose content is the first cell's events, inline markdown intact.
+/// Runs on *every* table, directive or not; a table with no dash-rows passes
+/// through untouched. Header rows can't match (the delimiter row is syntax, not
+/// events), and a one-column table has no cells after the first, so it is skipped
+/// outright. `table` holds the events after `Start(Table)` up to and including
+/// `End(Table)`.
+fn rewrite_group_rows<'a>(table: Vec<Event<'a>>, ncols: usize) -> Vec<Event<'a>> {
+    if ncols < 2 {
+        return table;
+    }
+    let mut out: Vec<Event> = Vec::with_capacity(table.len());
+    let mut in_head = false;
+    // The body row currently being buffered (None outside a body row).
+    let mut row: Option<Vec<Event>> = None;
+    for ev in table {
+        match ev {
+            Event::Start(Tag::TableHead) => {
+                in_head = true;
+                out.push(ev);
+            }
+            Event::End(TagEnd::TableHead) => {
+                in_head = false;
+                out.push(ev);
+            }
+            Event::Start(Tag::TableRow) if !in_head => row = Some(vec![ev]),
+            Event::End(TagEnd::TableRow) if row.is_some() => {
+                let mut r = row.take().expect("guard checked row is buffering");
+                r.push(ev);
+                match group_heading(&r, ncols) {
+                    Some(heading) => out.extend(heading),
+                    None => out.extend(r),
+                }
+            }
+            other => match row.as_mut() {
+                Some(r) => r.push(other),
+                None => out.push(other),
+            },
+        }
+    }
+    out
+}
+
+/// The group-heading replacement for one buffered body row, if it is a dash-row
+/// (see `rewrite_group_rows`); `None` leaves the row as-is. `row` runs from
+/// `Start(TableRow)` to `End(TableRow)` inclusive.
+fn group_heading<'a>(row: &[Event<'a>], ncols: usize) -> Option<Vec<Event<'a>>> {
+    // Cell content ranges: indexes after `Start(TableCell)` up to its End.
+    let mut cells: Vec<(usize, usize)> = Vec::new();
+    let mut j = 0;
+    while j < row.len() {
+        if matches!(row[j], Event::Start(Tag::TableCell)) {
+            let start = j + 1;
+            while j < row.len() && !matches!(row[j], Event::End(TagEnd::TableCell)) {
+                j += 1;
+            }
+            cells.push((start, j));
+        }
+        j += 1;
+    }
+    if cells.len() < 2 {
+        return None;
+    }
+    let is_dashes = |&(s, e): &(usize, usize)| {
+        let text = get_text(&row[s..e]);
+        let t = text.trim();
+        t.len() >= 3 && t.bytes().all(|b| b == b'-')
+    };
+    if !cells[1..].iter().all(is_dashes) {
+        return None;
+    }
+    let (s, e) = cells[0];
+    let mut out: Vec<Event> = Vec::with_capacity(e - s + 2);
+    out.push(Event::Html(format!(r#"<tr class="group"><th colspan="{ncols}">"#).into()));
+    out.extend(row[s..e].iter().cloned());
+    out.push(Event::Html("</th></tr>".into()));
+    Some(out)
+}
+
 /// Emit one reflowed table: a `<div class="reflow reflow-bp-{token}">` wrapper and
 /// the table with `scope="col"` headers and `data-label` body cells. The matching
 /// container query is shipped once in the generated `reflow.css` (see `reflow_css`);
@@ -598,13 +833,14 @@ fn emit_reflow_table<'a>(
     out: &mut Vec<Event<'a>>,
     aligns: Vec<Alignment>,
     table: Vec<Event<'a>>,
-    bp: &str,
+    spec: &DirectiveSpec,
 ) {
     let ncols = aligns.len().max(1);
     let headers = collect_headers(&table, ncols);
-    let token = reflow_class_token(bp);
+    let token = reflow_class_token(spec.bp.as_deref().expect("parser requires a breakpoint"));
+    let style = wrapper_style_attr(spec);
 
-    out.push(Event::Html(format!(r#"<div class="reflow reflow-bp-{token}">"#).into()));
+    out.push(Event::Html(format!(r#"<div class="reflow reflow-bp-{token}"{style}>"#).into()));
     out.push(Event::Start(Tag::Table(aligns.clone())));
 
     // Re-emit, replacing cell boundaries with attribute-carrying raw HTML.
@@ -659,12 +895,14 @@ fn emit_transpose_table<'a>(
     out: &mut Vec<Event<'a>>,
     aligns: Vec<Alignment>,
     table: Vec<Event<'a>>,
-    bp: &str,
+    spec: &DirectiveSpec,
     ncols: usize,
 ) {
-    let token = reflow_class_token(bp);
+    let token = reflow_class_token(spec.bp.as_deref().expect("parser requires a breakpoint"));
+    let style = wrapper_style_attr(spec);
     out.push(Event::Html(
-        format!(r#"<div class="transpose transpose-bp-{token} transpose-cols-{ncols}">"#).into(),
+        format!(r#"<div class="transpose transpose-bp-{token} transpose-cols-{ncols}"{style}>"#)
+            .into(),
     ));
     out.push(Event::Start(Tag::Table(aligns)));
     out.extend(table); // header + body events, native alignment styles intact
@@ -674,10 +912,42 @@ fn emit_transpose_table<'a>(
 /// Emit one scrollable table: a `<div class="table-scroll">` wrapper around the
 /// *unchanged* table. The generated CSS gives the wrapper `overflow-x: auto` (see
 /// `scroll_css`), so a table wider than its column pans horizontally instead of
-/// overflowing the page. `table` holds the events after `Start(Table)` up to and
-/// including `End(Table)`.
-fn emit_scroll_table<'a>(out: &mut Vec<Event<'a>>, aligns: Vec<Alignment>, table: Vec<Event<'a>>) {
-    out.push(Event::Html(r#"<div class="table-scroll">"#.into()));
+/// overflowing the page. A `sticky` argument adds `table-scroll-sticky` (first
+/// column pinned while panning); `sticky <length>` also adds `table-scroll-clamp`
+/// with `--sticky-w` (column clamped, labels wrap). `table` holds the events after
+/// `Start(Table)` up to and including `End(Table)`.
+fn emit_scroll_table<'a>(
+    out: &mut Vec<Event<'a>>,
+    aligns: Vec<Alignment>,
+    table: Vec<Event<'a>>,
+    spec: &DirectiveSpec,
+) {
+    let mut classes = String::from("table-scroll");
+    match spec.sticky {
+        Some(Sticky::Natural) => classes.push_str(" table-scroll-sticky"),
+        Some(Sticky::Clamp(_)) => classes.push_str(" table-scroll-sticky table-scroll-clamp"),
+        None => {}
+    }
+    let style = wrapper_style_attr(spec);
+    out.push(Event::Html(format!(r#"<div class="{classes}"{style}>"#).into()));
+    out.push(Event::Start(Tag::Table(aligns)));
+    out.extend(table);
+    out.push(Event::Html("</div>".into()));
+}
+
+/// Emit one fixed-width table: a `<div class="table-width">` wrapper (carrying the
+/// measured `--table-w`) around the *unchanged* table. No pivot — this is the
+/// `<!-- table: <length> -->` directive for a table that fits everywhere but whose
+/// panel should sit at a measured width (see `table_width_css`). `table` holds the
+/// events after `Start(Table)` up to and including `End(Table)`.
+fn emit_width_table<'a>(
+    out: &mut Vec<Event<'a>>,
+    aligns: Vec<Alignment>,
+    table: Vec<Event<'a>>,
+    spec: &DirectiveSpec,
+) {
+    let style = wrapper_style_attr(spec);
+    out.push(Event::Html(format!(r#"<div class="table-width"{style}>"#).into()));
     out.push(Event::Start(Tag::Table(aligns)));
     out.extend(table);
     out.push(Event::Html("</div>".into()));
@@ -688,22 +958,26 @@ fn emit_scroll_table<'a>(out: &mut Vec<Event<'a>>, aligns: Vec<Alignment>, table
 /// *unchanged* table inside a `table-expand-scroll` pan area. The overlay is a pure
 /// JS-free CSS `:target` toggle: clicking the open link points the URL fragment at
 /// the wrapper's id, and `.table-expand:target` (in `expand_css`) restyles the same
-/// element to fill the viewport — no DOM duplication. The generated CSS is
-/// layout-only; the author supplies the overlay background and button styling via
-/// the `.table-expand` class. `seq` need only be unique within the page. `table`
+/// element to fill the viewport — no DOM duplication. The close link points at
+/// `#!` — a fragment that matches no element — because that clears `:target`
+/// without scrolling (`href="#"` is the empty fragment, which the spec defines as
+/// "scroll to the top of the document"). The generated CSS is layout-only; the
+/// author supplies the overlay background and button styling via the
+/// `.table-expand` class. `seq` need only be unique within the page. `table`
 /// holds the events after `Start(Table)` up to and including `End(Table)`.
 fn emit_expand_table<'a>(
     out: &mut Vec<Event<'a>>,
     aligns: Vec<Alignment>,
     table: Vec<Event<'a>>,
-    bp: &str,
+    spec: &DirectiveSpec,
     seq: usize,
 ) {
-    let token = reflow_class_token(bp);
+    let token = reflow_class_token(spec.bp.as_deref().expect("parser requires a breakpoint"));
+    let style = wrapper_style_attr(spec);
     let id = format!("table-expand-{seq}");
     out.push(Event::Html(
         format!(
-            r##"<div class="table-expand table-expand-bp-{token}" id="{id}"><a class="table-expand-open" href="#{id}" aria-label="View table fullscreen">⛶</a><a class="table-expand-close" href="#" aria-label="Close fullscreen">✕</a><div class="table-expand-scroll">"##
+            r##"<div class="table-expand table-expand-bp-{token}" id="{id}"{style}><a class="table-expand-open" href="#{id}" aria-label="View table fullscreen">⛶</a><a class="table-expand-close" href="#!" aria-label="Close fullscreen">✕</a><div class="table-expand-scroll">"##
         )
         .into(),
     ));
@@ -772,14 +1046,28 @@ pub fn transpose_css(breakpoints: &BTreeSet<(String, usize)>) -> String {
     css
 }
 
-/// Generate the scroll rule for the responsive-table stylesheet: one static rule
-/// giving `.table-scroll` wrappers `overflow-x: auto`. Emitted once if any
-/// `<!-- scroll -->` table exists; there is no breakpoint (the rule is harmless
-/// while the table fits). Authors style the wrapper via the stable `.table-scroll`
-/// class.
+/// Generate the scroll rules for the responsive-table stylesheet: one static rule
+/// giving `.table-scroll` wrappers `overflow-x: auto`, plus the layout for the
+/// `sticky` argument — the first column pinned (`table-scroll-sticky`) and
+/// optionally clamped to `--sticky-w` with wrapping labels (`table-scroll-clamp`).
+/// Emitted once if any `<!-- scroll -->` table exists; the sticky rules are inert
+/// unless a directive asked for them. Layout only, as ever: the pinned column's
+/// background (needed to cover panning content) is the author's, via the stable
+/// classes.
 pub fn scroll_css() -> String {
     String::from(
-        "/* Table scroll — generated by zola-plus from `<!-- scroll -->` annotations.\n   Lets a wide table pan horizontally within its column. Style via the `.table-scroll` class. */\n\n.table-scroll { overflow-x: auto; }\n\n",
+        "/* Table scroll — generated by zola-plus from `<!-- scroll -->` annotations.\n   Lets a wide table pan horizontally within its column; `sticky` pins the first\n   column. Layout only — style (incl. the pinned column's background) via the\n   `.table-scroll` classes. */\n\n.table-scroll { overflow-x: auto; }\n.table-scroll-sticky th:first-child,\n.table-scroll-sticky td:first-child { position: sticky; left: 0; }\n.table-scroll-clamp th:first-child,\n.table-scroll-clamp td:first-child { max-width: var(--sticky-w, 6rem); white-space: normal; }\n\n",
+    )
+}
+
+/// Generate the width rule for the responsive-table stylesheet: wrappers obey a
+/// measured `--table-w` (written by a `width` argument or the `table:` directive),
+/// centered, never wider than their column. Emitted once if any directive carried
+/// a width; the `min()` fallback keeps width-less wrappers at their natural 100%.
+/// Layout only — the `.table-width` wrapper ships no appearance.
+pub fn table_width_css() -> String {
+    String::from(
+        "/* Table width — generated by zola-plus from `width` arguments on table directives.\n   Wrappers take their measured `--table-w`, centered, capped by the column. */\n\n.table-width, .reflow, .transpose, .table-scroll, .table-expand { width: min(var(--table-w, 100%), 100%); margin-inline: auto; }\n\n",
     )
 }
 
@@ -816,9 +1104,7 @@ pub fn expand_css(breakpoints: &BTreeSet<String>) -> String {
         ".table-expand:target { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; }\n",
     );
     css.push_str(".table-expand:target .table-expand-open { display: none; }\n");
-    css.push_str(
-        ".table-expand:target .table-expand-scroll { flex: 1 1 auto; min-height: 0; }\n",
-    );
+    css.push_str(".table-expand:target .table-expand-scroll { flex: 1 1 auto; min-height: 0; }\n");
     css.push_str(
         ".table-expand:target .table-expand-close { display: block; align-self: flex-end; }\n\n",
     );
@@ -827,9 +1113,7 @@ pub fn expand_css(breakpoints: &BTreeSet<String>) -> String {
     for bp in breakpoints {
         let t = reflow_class_token(bp);
         css.push_str(&format!("@container (max-width: {bp}) {{\n"));
-        css.push_str(&format!(
-            "  .table-expand-bp-{t} .table-expand-open {{ display: block; }}\n"
-        ));
+        css.push_str(&format!("  .table-expand-bp-{t} .table-expand-open {{ display: block; }}\n"));
         css.push_str("}\n\n");
     }
     css
@@ -1716,8 +2000,7 @@ mod tests {
     fn reflow_basic() {
         // Annotated table: scoped <style> at the chosen breakpoint, the wrapper, and
         // a data-label of its column header on every body cell.
-        let content =
-            "<!-- reflow: 40rem -->\n\n| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
+        let content = "<!-- reflow: 40rem -->\n\n| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
         assert_snapshot!(render_reflow(content));
     }
 
@@ -1731,8 +2014,7 @@ mod tests {
     #[test]
     fn reflow_inline_markup() {
         // Cells keep inline markup; data-label uses the header's plain text only.
-        let content =
-            "<!-- reflow: 30rem -->\n\n| **Bold head** | `code` |\n| --- | --- |\n| _em_ | [x](https://example.com) |";
+        let content = "<!-- reflow: 30rem -->\n\n| **Bold head** | `code` |\n| --- | --- |\n| _em_ | [x](https://example.com) |";
         assert_snapshot!(render_reflow(content));
     }
 
@@ -1742,7 +2024,9 @@ mod tests {
         let content = "| A | B |\n| - | - |\n| 1 | 2 |";
         let html = render_reflow(content);
         assert!(
-            !html.contains("class=\"reflow") && !html.contains("data-label") && !html.contains("<style"),
+            !html.contains("class=\"reflow")
+                && !html.contains("data-label")
+                && !html.contains("<style"),
             "unannotated table must stay a plain table, got:\n{html}"
         );
     }
@@ -1839,8 +2123,7 @@ mod tests {
     fn transpose_basic() {
         // Annotated table: the wrapper carries the breakpoint and column-count
         // classes; the table itself is re-emitted unchanged (no per-cell rewriting).
-        let content =
-            "<!-- transpose: 40rem -->\n\n| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
+        let content = "<!-- transpose: 40rem -->\n\n| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
         assert_snapshot!(render_transpose(content));
     }
 
@@ -1855,8 +2138,7 @@ mod tests {
     #[test]
     fn transpose_inline_markup() {
         // Cells keep their inline markup; transpose adds no data-label.
-        let content =
-            "<!-- transpose: 30rem -->\n\n| **Bold head** | `code` |\n| --- | --- |\n| _em_ | [x](https://example.com) |";
+        let content = "<!-- transpose: 30rem -->\n\n| **Bold head** | `code` |\n| --- | --- |\n| _em_ | [x](https://example.com) |";
         assert_snapshot!(render_transpose(content));
     }
 
@@ -1880,8 +2162,7 @@ mod tests {
     #[test]
     fn transpose_directive_does_not_leak_past_content() {
         // A directive applies only to the table that immediately follows it.
-        let content =
-            "<!-- transpose: 40rem -->\n\nA paragraph in between.\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let content = "<!-- transpose: 40rem -->\n\nA paragraph in between.\n\n| A | B |\n| - | - |\n| 1 | 2 |";
         let html = render_transpose(content);
         assert!(
             !html.contains("class=\"transpose"),
@@ -1933,8 +2214,7 @@ mod tests {
     fn transpose_and_reflow_are_mutually_exclusive() {
         // When both directives precede one table, the last one wins (here transpose);
         // the table is never wrapped as both.
-        let content =
-            "<!-- reflow: 40rem -->\n\n<!-- transpose: 30rem -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
+        let content = "<!-- reflow: 40rem -->\n\n<!-- transpose: 30rem -->\n\n| A | B |\n| - | - |\n| 1 | 2 |";
         let html = render_transpose(content);
         assert!(
             html.contains("class=\"transpose") && !html.contains("class=\"reflow"),
@@ -1948,7 +2228,10 @@ mod tests {
         set.insert(("40rem".to_string(), 2usize));
         set.insert(("30rem".to_string(), 3usize));
         let css = transpose_css(&set);
-        assert!(css.contains(".transpose-bp-40rem { container-type: inline-size; }"), "got:\n{css}");
+        assert!(
+            css.contains(".transpose-bp-40rem { container-type: inline-size; }"),
+            "got:\n{css}"
+        );
         assert!(css.contains("@container (max-width: 40rem) {"), "got:\n{css}");
         // The column count is a literal in `repeat()`, never a `var()`.
         assert!(
@@ -1973,8 +2256,7 @@ mod tests {
     #[test]
     fn scroll_basic() {
         // Annotated table: a `table-scroll` wrapper around the unchanged table.
-        let content =
-            "<!-- scroll -->\n\n| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
+        let content = "<!-- scroll -->\n\n| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
         assert_snapshot!(render_scroll(content));
     }
 
@@ -2011,8 +2293,7 @@ mod tests {
     fn expand_basic() {
         // Annotated table: a `table-expand` wrapper with open/close links and the
         // unchanged table inside a `table-expand-scroll` pan area.
-        let content =
-            "<!-- expand: 40rem -->\n\n| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
+        let content = "<!-- expand: 40rem -->\n\n| Name | Department |\n| ---- | ---------- |\n| Ada | Platform |\n| Linus | Kernel |";
         assert_snapshot!(render_expand(content));
     }
 
@@ -2096,10 +2377,7 @@ mod tests {
         set.insert("40rem".to_string());
         let css = expand_css(&set);
         // The :target overlay restyles the same element to fill the viewport.
-        assert!(
-            css.contains(".table-expand:target { position: fixed; inset: 0;"),
-            "got:\n{css}"
-        );
+        assert!(css.contains(".table-expand:target { position: fixed; inset: 0;"), "got:\n{css}");
         // The open button is gated behind the breakpoint's container query.
         assert!(css.contains("@container (max-width: 40rem) {"), "got:\n{css}");
         assert!(

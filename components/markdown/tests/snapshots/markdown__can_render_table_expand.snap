@@ -3,7 +3,7 @@ source: components/markdown/tests/markdown.rs
 expression: body
 ---
 <p>A table can expand to a full-viewport overlay when annotated:</p>
-<div class="table-expand table-expand-bp-40rem" id="table-expand-1"><a class="table-expand-open" href="#table-expand-1" aria-label="View table fullscreen">⛶</a><a class="table-expand-close" href="#" aria-label="Close fullscreen">✕</a><div class="table-expand-scroll"><table><thead><tr><th>Name</th><th>Department</th><th>Started</th></tr></thead><tbody>
+<div class="table-expand table-expand-bp-40rem" id="table-expand-1"><a class="table-expand-open" href="#table-expand-1" aria-label="View table fullscreen">⛶</a><a class="table-expand-close" href="#!" aria-label="Close fullscreen">✕</a><div class="table-expand-scroll"><table><thead><tr><th>Name</th><th>Department</th><th>Started</th></tr></thead><tbody>
 <tr><td>Ada</td><td>Platform</td><td>2021</td></tr>
 <tr><td>Linus</td><td>Kernel</td><td>2019</td></tr>
 </tbody></table>

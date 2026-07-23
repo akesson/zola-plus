@@ -2,7 +2,7 @@
 source: components/markdown/src/markdown.rs
 expression: render_expand(content)
 ---
-<div class="table-expand table-expand-bp-30rem" id="table-expand-1"><a class="table-expand-open" href="#table-expand-1" aria-label="View table fullscreen">⛶</a><a class="table-expand-close" href="#" aria-label="Close fullscreen">✕</a><div class="table-expand-scroll"><table><thead><tr><th style="text-align: left">L</th><th style="text-align: center">C</th><th style="text-align: right">R</th></tr></thead><tbody>
+<div class="table-expand table-expand-bp-30rem" id="table-expand-1"><a class="table-expand-open" href="#table-expand-1" aria-label="View table fullscreen">⛶</a><a class="table-expand-close" href="#!" aria-label="Close fullscreen">✕</a><div class="table-expand-scroll"><table><thead><tr><th style="text-align: left">L</th><th style="text-align: center">C</th><th style="text-align: right">R</th></tr></thead><tbody>
 <tr><td style="text-align: left">a</td><td style="text-align: center">b</td><td style="text-align: right">c</td></tr>
 </tbody></table>
 </div></div>

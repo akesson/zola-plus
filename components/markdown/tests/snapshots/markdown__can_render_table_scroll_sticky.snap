@@ -1,0 +1,11 @@
+---
+source: components/markdown/tests/markdown.rs
+expression: body
+---
+<div class="table-scroll table-scroll-sticky"><table><thead><tr><th>Name</th><th>Role</th></tr></thead><tbody>
+<tr><td>Ada</td><td>Eng</td></tr>
+</tbody></table>
+</div><div class="table-scroll table-scroll-sticky table-scroll-clamp" style="--table-w: 66rem; --sticky-w: 6rem"><table><thead><tr><th>Name</th><th>Role</th></tr></thead><tbody>
+<tr><td>Ada</td><td>Eng</td></tr>
+</tbody></table>
+</div>

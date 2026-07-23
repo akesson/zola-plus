@@ -609,3 +609,96 @@ fn tables_are_plain_without_scroll_or_expand_directive() {
     assert!(!body.contains("<style"));
     insta::assert_snapshot!(body);
 }
+
+#[test]
+fn can_render_table_width_directive() {
+    // `<!-- table: <length> -->` carries no pivot: it wraps the table in a
+    // `.table-width` div whose inline `--table-w` is the measured panel width.
+    let markdown = r#"A fixed-width panel when annotated:
+
+<!-- table: 54rem -->
+
+| Name | Role |
+| ---- | ---- |
+| Ada | Eng |
+"#;
+    let body = common::render(markdown).unwrap().body;
+    assert!(body.contains(r#"<div class="table-width" style="--table-w: 54rem">"#));
+    insta::assert_snapshot!(body);
+}
+
+#[test]
+fn can_render_directive_width_argument() {
+    // Any pivot directive takes `width <length>`: the measured panel width rides
+    // the wrapper as `--table-w`, alongside the pivot breakpoint.
+    let markdown = r#"<!-- reflow: 37rem width 54rem -->
+
+| Name | Role |
+| ---- | ---- |
+| Ada | Eng |
+"#;
+    let body = common::render(markdown).unwrap().body;
+    assert!(body.contains(r#"<div class="reflow reflow-bp-37rem" style="--table-w: 54rem">"#));
+    insta::assert_snapshot!(body);
+}
+
+#[test]
+fn can_render_table_scroll_sticky() {
+    // `scroll: sticky` pins the first column (`table-scroll-sticky`); a length
+    // after `sticky` also clamps it (`table-scroll-clamp` + `--sticky-w`), and a
+    // bare length on scroll is the panel width.
+    let markdown = r#"<!-- scroll: sticky -->
+
+| Name | Role |
+| ---- | ---- |
+| Ada | Eng |
+
+<!-- scroll: 66rem sticky 6rem -->
+
+| Name | Role |
+| ---- | ---- |
+| Ada | Eng |
+"#;
+    let body = common::render(markdown).unwrap().body;
+    assert!(body.contains(r#"<div class="table-scroll table-scroll-sticky">"#));
+    assert!(body.contains(
+        r#"<div class="table-scroll table-scroll-sticky table-scroll-clamp" style="--table-w: 66rem; --sticky-w: 6rem">"#
+    ));
+    insta::assert_snapshot!(body);
+}
+
+#[test]
+fn can_render_table_group_rows() {
+    // A body row whose cells after the first are all 3+ dashes is a group header:
+    // `<tr class="group"><th colspan="N">…</th></tr>`, first-cell inline markdown
+    // kept. It works on every table — bare or under a directive (reflow here must
+    // not give the group `<th>` a data-label).
+    let markdown = r#"| flag | arity | effect |
+| ---- | ----- | ------ |
+| **sync behaviour** |-------|-------|
+| `--no-sync` | 0 | skip the snapshot push |
+
+<!-- reflow: 37rem -->
+
+| flag | arity | effect |
+| ---- | ----- | ------ |
+| **sync behaviour** |-------|-------|
+| `--no-sync` | 0 | skip the snapshot push |
+"#;
+    let body = common::render(markdown).unwrap().body;
+    assert_eq!(body.matches(r#"<tr class="group"><th colspan="3"><strong>"#).count(), 2);
+    insta::assert_snapshot!(body);
+}
+
+#[test]
+fn invalid_table_directive_arguments_leave_table_plain() {
+    // A bad token drops the whole directive (with a warning): `sticky` off scroll,
+    // an unknown word, or a missing required value all leave the table untouched.
+    for directive in
+        ["<!-- reflow: 37rem sticky -->", "<!-- table: bogus -->", "<!-- scroll: wide -->"]
+    {
+        let markdown = format!("{directive}\n\n| x | y |\n| - | - |\n| 1 | 2 |\n");
+        let body = common::render(&markdown).unwrap().body;
+        assert!(!body.contains("<div"), "directive `{directive}` should be dropped: {body}");
+    }
+}

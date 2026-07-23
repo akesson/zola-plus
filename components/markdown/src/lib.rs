@@ -7,11 +7,11 @@ use shortcode::{extract_shortcodes, insert_md_shortcodes};
 use errors::Result;
 
 pub use crate::markdown::Rendered;
+use crate::markdown::markdown_to_html;
 pub use crate::markdown::{
     expand_breakpoints, expand_css, reflow_breakpoints, reflow_css, scroll_css, scroll_used,
-    transpose_breakpoints, transpose_css,
+    table_width_css, table_width_used, transpose_breakpoints, transpose_css,
 };
-use crate::markdown::markdown_to_html;
 pub use context::RenderContext;
 
 pub fn render_content(content: &str, context: &RenderContext) -> Result<markdown::Rendered> {

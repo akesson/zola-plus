@@ -844,7 +844,8 @@ impl Site {
         let transpose = markdown::transpose_breakpoints();
         let expand = markdown::expand_breakpoints();
         let scroll = markdown::scroll_used();
-        if reflow.is_empty() && transpose.is_empty() && expand.is_empty() && !scroll {
+        let width = markdown::table_width_used();
+        if reflow.is_empty() && transpose.is_empty() && expand.is_empty() && !scroll && !width {
             return Ok(());
         }
         let mut css = String::new();
@@ -859,6 +860,9 @@ impl Site {
         }
         if scroll {
             css.push_str(&markdown::scroll_css());
+        }
+        if width {
+            css.push_str(&markdown::table_width_css());
         }
         create_directory(&self.output_path)?;
         create_file(&self.output_path.join("responsive-tables.css"), css)?;

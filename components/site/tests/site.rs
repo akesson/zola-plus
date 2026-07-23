@@ -284,6 +284,35 @@ fn can_generate_responsive_tables_css_for_annotated_tables() {
         "responsive-tables.css",
         ".table-expand:target { position: fixed; inset: 0;"
     ));
+
+    // A `<!-- table: <length> -->` directive wraps the table in a width-carrying
+    // panel; `<!-- scroll: sticky <length> -->` pins and clamps the first column;
+    // a dash-row body row becomes a colspan group header.
+    assert!(file_contains!(
+        public,
+        "root-page-1/index.html",
+        "class=\"table-width\" style=\"--table-w: 54rem\""
+    ));
+    assert!(file_contains!(
+        public,
+        "root-page-1/index.html",
+        "class=\"table-scroll table-scroll-sticky table-scroll-clamp\" style=\"--sticky-w: 6rem\""
+    ));
+    assert!(file_contains!(
+        public,
+        "root-page-1/index.html",
+        "<tr class=\"group\"><th colspan=\"2\"><strong>era</strong></th></tr>"
+    ));
+    assert!(file_contains!(
+        public,
+        "responsive-tables.css",
+        ".table-scroll-sticky td:first-child { position: sticky; left: 0; }"
+    ));
+    assert!(file_contains!(
+        public,
+        "responsive-tables.css",
+        "width: min(var(--table-w, 100%), 100%); margin-inline: auto;"
+    ));
 }
 
 #[test]

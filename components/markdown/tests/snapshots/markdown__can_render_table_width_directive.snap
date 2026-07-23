@@ -1,0 +1,9 @@
+---
+source: components/markdown/tests/markdown.rs
+expression: body
+---
+<p>A fixed-width panel when annotated:</p>
+<div class="table-width" style="--table-w: 54rem"><table><thead><tr><th>Name</th><th>Role</th></tr></thead><tbody>
+<tr><td>Ada</td><td>Eng</td></tr>
+</tbody></table>
+</div>

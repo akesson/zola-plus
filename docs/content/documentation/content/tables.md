@@ -80,6 +80,10 @@ between the comment and the table**:
 
 A table with no directive is left exactly as it is.
 
+There is also a fifth, non-responsive directive: `<!-- table: <length> -->` gives
+a table that fits everywhere a fixed, centered panel width (see
+[Widths and sticky columns](#widths-and-sticky-columns)).
+
 ## The breakpoint
 
 `reflow`, `transpose`, and `expand` take a **breakpoint** — any CSS length (`rem`,
@@ -101,6 +105,60 @@ not the viewport — so a table in a sidebar responds independently of one in th
 main column, at any font size or zoom.
 
 Skip to the [live demos](#demos) below to see each one respond.
+
+## Widths and sticky columns
+
+Directive arguments are whitespace-separated tokens after the colon. A bare CSS
+length is the directive's primary value — the breakpoint for `reflow` /
+`transpose` / `expand`, the panel width for `table` and `scroll`. Two named
+arguments extend that:
+
+- **`width <length>`** — on any directive: the wrapper gets an inline
+  `--table-w: <length>`, and the generated stylesheet sizes it
+  `min(var(--table-w, 100%), 100%)`, centered. Use it to pin a table's panel to a
+  deliberate width (e.g. one measured and snapped to a scale at authoring time)
+  instead of whatever `fit-content` happens to produce:
+
+  ```md
+  <!-- reflow: 37rem width 54rem -->
+  ```
+
+  The width-only form is the `table` directive: `<!-- table: 54rem -->` wraps the
+  table in `<div class="table-width" style="--table-w: 54rem">` with no pivot.
+
+- **`sticky [<length>]`** — `scroll` only: the first column is pinned
+  (`position: sticky`) while the rest pans behind it, so row labels stay
+  readable. Bare `sticky` keeps the column at its natural width; `sticky 6rem`
+  also clamps it to that width and lets its labels wrap
+  (`--sticky-w`). Give the pinned cells an opaque background in your own CSS —
+  without one the panning content shows through them:
+
+  ```md
+  <!-- scroll: sticky 6rem width 66rem -->
+  ```
+
+An invalid token (a typo, `sticky` off `scroll`, a bad length) drops the whole
+directive with a build warning, so the table renders plain rather than
+half-styled.
+
+## Group rows
+
+On **every** table — with or without a directive — a body row whose cells after
+the first are all dashes (3+) is a **group header**. It echoes the delimiter
+row, so the source reads as a section divider:
+
+```md
+| flag               | arity | effect                 |
+|--------------------|-------|------------------------|
+| **sync behaviour** |-------|------------------------|
+| `--no-sync`        | 0     | skip the snapshot push |
+```
+
+The dash-row becomes `<tr class="group"><th colspan="3">…</th></tr>` — a
+full-width heading whose content is the first cell, inline markdown intact.
+zola-plus emits no styling for it; style `tr.group th` yourself. Caveat: outside
+zola-plus (e.g. a GitHub preview of the same markdown) the dashes render as
+literal cell text.
 
 ## What it emits
 
@@ -147,13 +205,32 @@ ships in the linked stylesheet (see below).
 </div>
 ```
 
+With `sticky` the wrapper also carries `table-scroll-sticky` (and, clamped,
+`table-scroll-clamp` plus an inline `--sticky-w`); a `width` argument on any
+directive adds an inline `--table-w`:
+
+```html
+<div class="table-scroll table-scroll-sticky table-scroll-clamp"
+     style="--table-w: 66rem; --sticky-w: 6rem">
+  <table> … </table>
+</div>
+```
+
+**table** (width only) wraps the table in:
+
+```html
+<div class="table-width" style="--table-w: 54rem">
+  <table> … </table>
+</div>
+```
+
 **expand** wraps the table with an id (the `:target` of the overlay), an open and a
 close link, and a pannable inner area:
 
 ```html
 <div class="table-expand table-expand-bp-40rem" id="table-expand-1">
   <a class="table-expand-open" href="#table-expand-1" aria-label="View table fullscreen">⛶</a>
-  <a class="table-expand-close" href="#" aria-label="Close fullscreen">✕</a>
+  <a class="table-expand-close" href="#!" aria-label="Close fullscreen">✕</a>
   <div class="table-expand-scroll">
     <table> … </table>
   </div>
@@ -163,7 +240,9 @@ close link, and a pannable inner area:
 - The overlay is pure CSS: clicking the open link points the page fragment at the
   wrapper's id, and the stylesheet's `.table-expand:target` rule restyles that same
   element to fill the viewport — no JavaScript and no duplicated table. Each
-  expandable table on a page gets a unique `table-expand-N` id.
+  expandable table on a page gets a unique `table-expand-N` id. The close link's
+  `#!` fragment matches no element, which clears `:target` without scrolling
+  (`href="#"` would jump to the top of the page).
 
 For `reflow`, `transpose`, and `expand` the breakpoint lives in the class
 (`reflow-bp-40rem`, …) — a decimal point becomes an underscore, so `37.5rem` →
@@ -210,10 +289,26 @@ query that turns the table into a column-first CSS grid — which flips it:
 }
 ```
 
-**scroll** is one static rule (no breakpoint):
+**scroll** is a few static rules (no breakpoint) — the sticky ones are inert
+unless a directive asked for them:
 
 ```css
 .table-scroll { overflow-x: auto; }
+.table-scroll-sticky th:first-child,
+.table-scroll-sticky td:first-child { position: sticky; left: 0; }
+.table-scroll-clamp th:first-child,
+.table-scroll-clamp td:first-child { max-width: var(--sticky-w, 6rem); white-space: normal; }
+```
+
+Any **width** usage adds one static rule making wrappers obey their inline
+`--table-w` (the `min()` fallback keeps width-less wrappers at their natural
+100%):
+
+```css
+.table-width, .reflow, .transpose, .table-scroll, .table-expand {
+  width: min(var(--table-w, 100%), 100%);
+  margin-inline: auto;
+}
 ```
 
 **expand** is one static block of overlay *layout* plus, per breakpoint, a query
