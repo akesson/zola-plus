@@ -1,6 +1,6 @@
 [package]
 name = "zola-plus"
-version = "0.22.1"
+version = "1.0.0"
 authors = ["Vincent Prouillet <hello@vincentprouillet.com>"]
 edition = "2024"
 license = "EUPL-1.2"
