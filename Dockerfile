@@ -10,17 +10,17 @@ COPY . .
 
 RUN if [ "${USE_GH_RELEASE}" = "true" ]; then \
     if [ "${ZOLA_RELEASE_VERSION}" = "latest" ]; then \
-      export ZOLA_VERSION=$(curl -sL https://api.github.com/repos/getzola/zola/releases/latest | jq -r .name); \
+      export ZOLA_VERSION=$(curl -sL https://api.github.com/repos/akesson/zola-plus/releases/latest | jq -r .tag_name); \
     else \
       export ZOLA_VERSION="${ZOLA_RELEASE_VERSION}"; \
     fi && \
-    curl -sL --fail --output zola.tar.gz https://github.com/getzola/zola/releases/download/${ZOLA_VERSION}/zola-${ZOLA_VERSION}-$(uname -m)-unknown-linux-gnu.tar.gz && \
-    tar -xzvf zola.tar.gz zola; \
+    curl -sL --fail --output zola-plus.tar.gz https://github.com/akesson/zola-plus/releases/download/${ZOLA_VERSION}/zola-plus-${ZOLA_VERSION}-$(uname -m)-unknown-linux-gnu.tar.gz && \
+    tar -xzvf zola-plus.tar.gz zola-plus; \
   else \
     cargo build --release && \
-    cp target/$(uname -m)-unknown-linux-gnu/release/zola-plus zola; \
-  fi && ./zola --version
+    cp target/$(uname -m)-unknown-linux-gnu/release/zola-plus .; \
+  fi && ./zola-plus --version
 
 FROM gcr.io/distroless/cc-debian12
-COPY --from=builder /app/zola /bin/zola-plus
+COPY --from=builder /app/zola-plus /bin/zola-plus
 ENTRYPOINT [ "/bin/zola-plus" ]
