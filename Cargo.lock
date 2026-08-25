@@ -805,7 +805,6 @@ dependencies = [
  "test-case",
  "time",
  "toml",
- "unicode-segmentation",
  "utils",
  "walkdir",
 ]
@@ -2631,6 +2630,7 @@ dependencies = [
  "regex",
  "templates",
  "tera",
+ "unicode-segmentation",
  "utils",
 ]
 

@@ -14,14 +14,12 @@ regex = { workspace = true }
 serde_yaml = { workspace = true }
 tera = { workspace = true }
 toml = { workspace = true }
-unicode-segmentation = { workspace = true }
 walkdir = { workspace = true }
 
 errors = { workspace = true }
 utils = { workspace = true }
 config = { workspace = true }
 
-# TODO: remove it?
 markdown = { workspace = true }
 
 [dev-dependencies]

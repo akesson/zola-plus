@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use unicode_segmentation::UnicodeSegmentation;
 use walkdir::WalkDir;
 
 use config::Config;
@@ -60,10 +59,9 @@ pub fn find_related_assets(path: &Path, config: &Config, recursive: bool) -> Vec
 
 /// Get word count and estimated reading time
 pub fn get_reading_analytics(content: &str) -> (usize, usize) {
-    // code fences "toggle" the state from non-code to code and back, so anything inbetween the
-    // first fence and the next can be ignored
-    let split = content.split("```");
-    let word_count = split.step_by(2).map(|section| section.unicode_words().count()).sum();
+    // Counts prose only: code blocks, raw HTML, link targets and shortcode calls are skipped,
+    // see `markdown::count_words`
+    let word_count = markdown::count_words(content);
 
     // https://help.medium.com/hc/en-us/articles/214991667-Read-time
     // 275 seems a bit too high though
@@ -247,15 +245,19 @@ mod tests {
 
     #[test]
     fn reading_analytics_no_code() {
-        let (word_count, reading_time) =
-            get_reading_analytics("hello world ``` code goes here ``` goodbye world");
-        assert_eq!(word_count, 4);
-        assert_eq!(reading_time, 1);
-
         let (word_count, reading_time) = get_reading_analytics(
-            "hello world ``` code goes here ``` goodbye world ``` dangling fence",
+            "hello world\n\n```\ncode goes here\n```\n\ngoodbye world\n\n```\ndangling fence",
         );
         assert_eq!(word_count, 4);
+        assert_eq!(reading_time, 1);
+    }
+
+    #[test]
+    fn reading_analytics_no_html_or_shortcodes() {
+        let (word_count, reading_time) = get_reading_analytics(
+            "hello <!-- secret --> world {{ youtube(id=\"x\") }}\n\n<svg viewBox=\"0 0 1 1\"><path d=\"M0 0L1 1\"/></svg>",
+        );
+        assert_eq!(word_count, 2);
         assert_eq!(reading_time, 1);
     }
 }
