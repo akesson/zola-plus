@@ -31,7 +31,8 @@ summary: String?;
 taxonomies: HashMap<String, Array<String>>;
 extra: HashMap<String, Any>;
 toc: Array<Header>,
-// Naive word count, will not work for languages without whitespace
+// Words in the prose only: code blocks, raw HTML, link targets and shortcode calls are
+// skipped. CJK text is counted per character rather than per word
 word_count: Number;
 // Based on https://help.medium.com/hc/en-us/articles/214991667-Read-time
 reading_time: Number;
@@ -90,7 +91,7 @@ pages: Array<Page>;
 // the actual section object if you need it
 subsections: Array<String>;
 toc: Array<Header>,
-// Unicode word count
+// Words in the prose only, see the page `word_count` above
 word_count: Number;
 // Based on https://help.medium.com/hc/en-us/articles/214991667-Read-time
 reading_time: Number;

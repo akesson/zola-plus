@@ -1,6 +1,7 @@
 mod context;
 mod markdown;
 mod shortcode;
+mod word_count;
 
 use shortcode::{extract_shortcodes, insert_md_shortcodes};
 
@@ -13,6 +14,7 @@ pub use crate::markdown::{
     table_width_css, table_width_used, transpose_breakpoints, transpose_css,
 };
 pub use context::RenderContext;
+pub use word_count::count_words;
 
 pub fn render_content(content: &str, context: &RenderContext) -> Result<markdown::Rendered> {
     // avoid parsing the content if needed

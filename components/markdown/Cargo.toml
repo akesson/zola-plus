@@ -12,6 +12,7 @@ once_cell = { workspace = true }
 pulldown-cmark = { workspace = true }
 pulldown-cmark-escape = { workspace = true }
 regex = { workspace = true }
+unicode-segmentation = { workspace = true }
 tera = { workspace = true }
 giallo = { workspace = true }
 log = { workspace = true }
